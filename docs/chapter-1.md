@@ -140,13 +140,6 @@ The implementation will be considered complete when the following checks pass:
 - Live stream plays in a browser or media player on the local network: satisfied by HLS delivery over HTTP and browser playback through HLS.js.
 - Holds up with several simultaneous viewers: supported by HLS segment reuse and cached static delivery on the LAN.
 - Full path is traceable: satisfied by the explicit separation of source, encode, package, cache, and player responsibilities.
-- Half-page write-up on key decisions: satisfied by the architecture, decision, and tradeoff sections in this document.
-
-## Implementation Notes
-
-- Backend work will be centered in the existing backend application and should add a real runtime entrypoint, configuration, FFmpeg orchestration, and stream status endpoints.
-- Frontend work will replace the current starter experience with a purpose-built live viewer page.
-- The default assumption is that the stream is available only inside the office network and addressed by the broadcaster machine's LAN IP.
 
 ## Conclusion
 
