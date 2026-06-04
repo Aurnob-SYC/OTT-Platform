@@ -150,3 +150,13 @@ The server machine must allow inbound LAN traffic on the chosen ports. For examp
 - HLS through nginx: `http://<server-lan-ip>/hls/index.m3u8`
 
 In production-like local testing, prefer serving the built frontend and HLS through nginx so viewers need one base host.
+
+## Key Design Decisions
+
+1. **Use HLS for Chapter 1 delivery.** HLS is segment-based, widely supported, and naturally supports many viewers requesting the same content. It is a good fit for reliable LAN playback where several viewers need to watch the same live feed.
+
+2. **Use FFmpeg for encode and packaging.** Encoding is required because browsers and media players need predictable codecs and container formats. FFmpeg is the standard local tool for this stage because it can ingest many source types, encode H.264/AAC, and write HLS output directly.
+
+3. **Put nginx in front of the HLS files.** The application server should not spend its time serving every media segment. nginx is better suited to static file delivery and short-lived caching. This also mirrors the later OTT pattern where an origin/cache layer sits between packaging and viewers.
+
+4. **Run locally first, but keep boundaries clear.** FFmpeg, backend, HLS storage, nginx, and frontend can all run on one LAN machine for now. The design still separates responsibilities so each component can be replaced or scaled later.
