@@ -112,3 +112,41 @@ The viewer can be:
 - VLC or another media player pointed directly at the `.m3u8` URL.
 
 The frontend should keep Chapter 1 simple: one player page, a visible stream URL, and basic status information from the application server.
+
+## End-to-End Data Flow
+
+```text
+1. Source produces live video.
+2. FFmpeg reads the source.
+3. FFmpeg encodes the stream into H.264/AAC.
+4. FFmpeg writes live HLS manifest and segment files.
+5. nginx reads the HLS files from disk.
+6. Viewers request the manifest from nginx.
+7. Viewers repeatedly request the listed media segments.
+8. The player buffers a few segments and plays the live stream.
+```
+
+## LAN Deployment Shape
+
+For the first milestone, all server-side components can run on one machine:
+
+```text
+Developer/server machine
+  - Backend process
+  - FFmpeg process
+  - HLS output directory
+  - nginx
+  - Frontend dev server or built frontend
+
+Viewer devices on same LAN
+  - Browser or VLC
+  - Access stream by server LAN IP
+```
+
+The server machine must allow inbound LAN traffic on the chosen ports. For example:
+
+- Frontend: `http://<server-lan-ip>:5173`
+- Backend API: `http://<server-lan-ip>:4000`
+- HLS through nginx: `http://<server-lan-ip>/hls/index.m3u8`
+
+In production-like local testing, prefer serving the built frontend and HLS through nginx so viewers need one base host.
