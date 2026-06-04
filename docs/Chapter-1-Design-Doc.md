@@ -185,3 +185,20 @@ source -> FFmpeg encode/package -> HLS files -> nginx cache -> player
 | Manifest is cached too aggressively | Player falls behind or stalls | Configure nginx to avoid long caching for `.m3u8` files |
 | Segments are deleted too quickly | Player requests missing files | Keep enough live playlist segments for player buffering |
 | Firewall blocks LAN access | Other devices cannot connect | Open only the required local ports on the server machine |
+
+## Initial Implementation Plan
+
+1. Create an FFmpeg command that generates a live HLS stream from a test source or looped file.
+2. Add backend controls to start, stop, and inspect the FFmpeg process.
+3. Write HLS output into a known local media directory.
+4. Configure nginx to serve `/hls/` from that directory with correct content types and cache behavior.
+5. Build a simple frontend player page that loads the nginx HLS URL.
+6. Test with at least three simultaneous viewers on the LAN.
+
+## Decision Write-Up
+
+For the first chapter I chose an HLS-based live streaming architecture. The goal is to prove that a live stream can be encoded, packaged, cached, and watched by several people on the local network. HLS fits that goal because it turns the live stream into a manifest plus small media segments. Each viewer can independently request the same files, and nginx can serve those files efficiently from a local cache layer.
+
+FFmpeg is the encoder and packager because raw camera or browser video is not enough for reliable playback. The stream needs predictable codecs, a stable segment format, and a live playlist that players understand. The application server stays focused on process control and status reporting rather than serving every video segment. That keeps the video delivery path simple and avoids making the backend the bottleneck when multiple viewers join.
+
+nginx sits in front of the generated HLS files because even a small LAN stream benefits from a dedicated static delivery layer. The manifest should remain fresh, while media segments can be cached briefly. This design is small enough to run on one machine but still teaches the same basic path used by larger OTT systems: source, encode, package, cache, and player.
