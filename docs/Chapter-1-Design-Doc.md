@@ -151,7 +151,7 @@ server {
 
     # HLS stream — media segments
     location /hls/ {
-        alias backend/media/live/;
+        alias D:/OTT-Platform/backend/media/live/;
 
         # m3u8 manifest: no caching so players always fetch the latest
         location ~ \.m3u8$ {
@@ -174,7 +174,7 @@ server {
 }
 ```
 
-This config assumes nginx is running on the same machine as FFmpeg and the backend, and that the `backend/media/live/` path is relative to the nginx working directory or adjusted with an absolute path. The CORS `Access-Control-Allow-Origin: *` headers ensure the player can fetch segments when the frontend is served from a different port (e.g., Vite dev server on `:5173`).
+This config assumes nginx is running on the same machine as FFmpeg and the backend. Adjust the `alias` path to match the actual absolute path on your machine. The CORS `Access-Control-Allow-Origin: *` headers ensure the player can fetch segments when the frontend is served from a different port (e.g., Vite dev server on `:5173`).
 
 ### 7. Viewer
 
