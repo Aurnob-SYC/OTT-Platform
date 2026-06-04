@@ -94,7 +94,24 @@ The backend monitors the FFmpeg child process and handles failures:
 4. **No auto-restart** — do not automatically restart FFmpeg in Chapter 1. A crashed stream stays stopped until the user explicitly calls `POST /api/stream/start` again. Auto-restart masks the failure without fixing it and complicates state management.
 5. **Process group** — launch FFmpeg in its own process group so killing the backend does not orphan the encoder.
 
-### 4. HLS Origin Directory
+### 4. Startup and Teardown Protocol
+
+**Startup sequence:**
+
+1. On backend launch, ensure `backend/media/live/` exists (create if missing). If creation fails, log the error and refuse API requests.
+2. Clear any stale HLS files from a previous run — remove all `.ts`, `.m3u8`, and `.mp4` files in the directory so players never serve stale segments.
+3. Start the HTTP server. The `/api/stream/start` endpoint is now reachable.
+4. On `POST /api/stream/start`, spawn FFmpeg as a child process, record the PID and start time, and write HLS output to the media directory.
+5. Wait several seconds for FFmpeg to produce the first segment, then confirm the manifest exists. If it does not, set status to `failed` and log FFmpeg stderr.
+
+**Teardown sequence:**
+
+1. On `POST /api/stream/stop`, send `SIGTERM` to the FFmpeg child process.
+2. Wait up to 5 seconds for graceful exit. If FFmpeg has not exited, send `SIGKILL`.
+3. Reset status to `running: false`, clear PID and uptime.
+4. On backend shutdown (`SIGTERM` / `SIGINT`), kill the FFmpeg child process first, then exit.
+
+### 5. HLS Origin Directory
 
 FFmpeg writes generated HLS files to a local directory, for example:
 
@@ -124,6 +141,40 @@ Example playback URL:
 ```text
 http://<server-lan-ip>/hls/index.m3u8
 ```
+
+#### Recommended nginx Config
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    # HLS stream — media segments
+    location /hls/ {
+        alias backend/media/live/;
+
+        # m3u8 manifest: no caching so players always fetch the latest
+        location ~ \.m3u8$ {
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+            add_header Access-Control-Allow-Origin "*";
+        }
+
+        # ts segments: brief cache for repeated viewer requests
+        location ~ \.ts$ {
+            add_header Cache-Control "public, max-age=10";
+            add_header Access-Control-Allow-Origin "*";
+        }
+    }
+
+    # Optional — serve built frontend from nginx in production-like testing
+    location / {
+        root frontend/dist;
+        try_files $uri /index.html;
+    }
+}
+```
+
+This config assumes nginx is running on the same machine as FFmpeg and the backend, and that the `backend/media/live/` path is relative to the nginx working directory or adjusted with an absolute path. The CORS `Access-Control-Allow-Origin: *` headers ensure the player can fetch segments when the frontend is served from a different port (e.g., Vite dev server on `:5173`).
 
 ### 6. Viewer
 
