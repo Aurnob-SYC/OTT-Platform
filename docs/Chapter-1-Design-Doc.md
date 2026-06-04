@@ -72,6 +72,18 @@ The application server should not proxy every video segment in Chapter 1. Its jo
 
 Video files should be served by nginx, not by the application server, because static segment delivery is exactly what nginx is good at.
 
+#### API Contract
+
+The backend exposes the following endpoints for the frontend and CLI:
+
+| Method | Path | Request Body | Response | Purpose |
+|---|---|---|---|---|
+| `POST` | `/api/stream/start` | `{ "source": "test" \| "file" \| "camera" }` | `{ "success": true, "pid": 1234 }` | Start FFmpeg with the given source type |
+| `POST` | `/api/stream/stop` | — | `{ "success": true }` | Stop the running FFmpeg process |
+| `GET` | `/api/stream/status` | — | `{ "running": bool, "source": string, "uptime": number, "output": string }` | Return current stream state |
+
+The `status` endpoint is the most important — the frontend polls it for display. `uptime` is in seconds since FFmpeg started; `output` is the HLS directory path. `running: false` with no PID means the stream was never started or has been stopped cleanly; `running: false` with a non-null `pid` signals a crash (FFmpeg exited unexpectedly).
+
 ### 4. HLS Origin Directory
 
 FFmpeg writes generated HLS files to a local directory, for example:
