@@ -160,3 +160,28 @@ In production-like local testing, prefer serving the built frontend and HLS thro
 3. **Put nginx in front of the HLS files.** The application server should not spend its time serving every media segment. nginx is better suited to static file delivery and short-lived caching. This also mirrors the later OTT pattern where an origin/cache layer sits between packaging and viewers.
 
 4. **Run locally first, but keep boundaries clear.** FFmpeg, backend, HLS storage, nginx, and frontend can all run on one LAN machine for now. The design still separates responsibilities so each component can be replaced or scaled later.
+
+## Success Criteria
+
+Chapter 1 is complete when:
+
+- A live `.m3u8` URL is available on the LAN.
+- A browser or VLC can play the stream from another device.
+- Several viewers can watch at the same time without the backend becoming the bottleneck.
+- The stream path can be traced as:
+
+```text
+source -> FFmpeg encode/package -> HLS files -> nginx cache -> player
+```
+
+- Logs or status output can show whether FFmpeg is running and where the HLS output is being written.
+
+## Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Browser cannot play the stream | Viewers see a blank player | Use `hls.js` in the frontend and test with VLC as a control |
+| FFmpeg source differs by machine | Stream startup fails | Start with a test source or looped file before adding webcam capture |
+| Manifest is cached too aggressively | Player falls behind or stalls | Configure nginx to avoid long caching for `.m3u8` files |
+| Segments are deleted too quickly | Player requests missing files | Keep enough live playlist segments for player buffering |
+| Firewall blocks LAN access | Other devices cannot connect | Open only the required local ports on the server machine |
