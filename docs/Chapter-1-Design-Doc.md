@@ -125,7 +125,7 @@ backend/media/live/
 
 This directory acts as the local origin for nginx. It should be writable by the backend or FFmpeg process and readable by nginx.
 
-### 5. nginx Cache Server
+### 6. nginx Cache Server
 
 nginx is the local delivery layer for viewers. Even on a LAN, the cache layer matters because multiple viewers will repeatedly request the same manifest and segment files. nginx can handle those static requests more efficiently than the application server and keeps the future architecture closer to a real OTT origin/cache/CDN model.
 
@@ -176,7 +176,7 @@ server {
 
 This config assumes nginx is running on the same machine as FFmpeg and the backend, and that the `backend/media/live/` path is relative to the nginx working directory or adjusted with an absolute path. The CORS `Access-Control-Allow-Origin: *` headers ensure the player can fetch segments when the frontend is served from a different port (e.g., Vite dev server on `:5173`).
 
-### 6. Viewer
+### 7. Viewer
 
 The viewer can be:
 
