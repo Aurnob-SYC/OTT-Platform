@@ -84,6 +84,16 @@ The backend exposes the following endpoints for the frontend and CLI:
 
 The `status` endpoint is the most important — the frontend polls it for display. `uptime` is in seconds since FFmpeg started; `output` is the HLS directory path. `running: false` with no PID means the stream was never started or has been stopped cleanly; `running: false` with a non-null `pid` signals a crash (FFmpeg exited unexpectedly).
 
+#### Crash Handling
+
+The backend monitors the FFmpeg child process and handles failures:
+
+1. **Detection** — register a `close` / `exit` event on the child process. When FFmpeg exits with a non-zero code, capture the exit code and stderr tail.
+2. **Status reflection** — the `status` endpoint returns `running: false` with the captured exit code and a truncated error message so the frontend can display a failure state.
+3. **Stale segment cleanup** — on crash, the backend removes any partial `.ts` segment and rewrites `index.m3u8` to an empty manifest (or a status placeholder). This prevents players from fetching a manifest that lists missing segments.
+4. **No auto-restart** — do not automatically restart FFmpeg in Chapter 1. A crashed stream stays stopped until the user explicitly calls `POST /api/stream/start` again. Auto-restart masks the failure without fixing it and complicates state management.
+5. **Process group** — launch FFmpeg in its own process group so killing the backend does not orphan the encoder.
+
 ### 4. HLS Origin Directory
 
 FFmpeg writes generated HLS files to a local directory, for example:
