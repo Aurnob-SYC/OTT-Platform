@@ -1,0 +1,57 @@
+import type { LiveStream } from '../types'
+
+const now = Date.now()
+
+export const INITIAL_STREAMS: LiveStream[] = [
+  {
+    bitrate: '2.8 Mbps',
+    creator: 'user-123',
+    encoderPid: 4132,
+    hlsOutput: 'backend/media/live/stream-a3f8c/',
+    id: 'stream-a3f8c',
+    mediaMtxPath: 'live/stream-a3f8c',
+    resolution: '720p',
+    startedAt: now - 1000 * 60 * 47,
+    status: 'live',
+    title: 'Desk Camera - Engineering',
+    viewers: 12,
+  },
+  {
+    bitrate: '1.4 Mbps',
+    creator: 'user-287',
+    encoderPid: 4198,
+    hlsOutput: 'backend/media/live/stream-b72e1/',
+    id: 'stream-b72e1',
+    mediaMtxPath: 'live/stream-b72e1',
+    resolution: '480p',
+    startedAt: now - 1000 * 60 * 23,
+    status: 'encoding',
+    title: 'MediaMTX Relay Test',
+    viewers: 4,
+  },
+  {
+    bitrate: '2.8 Mbps',
+    creator: 'user-641',
+    encoderPid: 4264,
+    hlsOutput: 'backend/media/live/stream-c4d2f/',
+    id: 'stream-c4d2f',
+    mediaMtxPath: 'live/stream-c4d2f',
+    resolution: '720p',
+    startedAt: now - 1000 * 60 * 12,
+    status: 'live',
+    title: 'LAN Viewer Validation',
+    viewers: 18,
+  },
+  {
+    bitrate: '-',
+    creator: 'user-905',
+    hlsOutput: 'backend/media/live/stream-d5e3a/',
+    id: 'stream-d5e3a',
+    mediaMtxPath: 'live/stream-d5e3a',
+    resolution: '720p',
+    startedAt: now - 1000 * 60 * 120,
+    status: 'failed',
+    title: 'Old Encoder Failure Case',
+    viewers: 0,
+  },
+]
