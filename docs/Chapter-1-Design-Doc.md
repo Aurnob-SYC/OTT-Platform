@@ -1,76 +1,163 @@
-# Chapter 1 Design Doc: LAN Live Streaming With HLS
+# Chapter 1 Design Doc: LAN Multi-Stream Live Streaming
 
 ## Goal
 
-Build the first working version of the OTT live streaming pipeline for local LAN use only. A small group of viewers on the same office network should be able to open a browser player or media player and watch the same live stream at the same time.
+Build the first working version of the OTT live streaming pipeline for local LAN use only. Multiple people on the same office network should be able to publish their own live streams at the same time, and viewers should be able to choose one active live stream to watch.
 
-This chapter is intentionally focused on the HLS delivery path:
+This chapter is focused on proving the live path and the stream-control model:
 
-- Encode a live video source.
-- Package the encoded stream into HLS segments and a manifest.
-- Serve HLS through a local cache layer.
-- Play the stream from another device on the LAN.
-- Trace the full path from source to player.
+- Capture camera video in the browser.
+- Publish the camera feed over WebRTC.
+- Relay each live stream through MediaMTX.
+- Keep camera capture decoupled from server-side encoding.
+- Encode and package each live stream into multiple playback resolutions.
+- Serve the selected stream to viewers on the LAN.
+- Ensure one viewer watches only one live stream at a time.
+- Trace the full path from browser camera to player.
 
 ## Architecture
 
 ```text
-Camera or test source
-  -> FFmpeg encoder / HLS packager
-  -> HLS origin directory
+Publisher browser camera
+  -> WebRTC publish
+  -> MediaMTX relay
+  -> per-stream encoder worker
+  -> per-stream multi-resolution HLS output
   -> nginx cache server
-  -> browser or media player viewers
+  -> viewer browser player
 ```
 
-This architecture is optimized for the Chapter 1 milestone: reliable local-network live playback for multiple viewers using HLS. Each viewer requests the same manifest and segment files through nginx, which keeps video delivery cacheable, simple to test, and close to the delivery pattern used by larger OTT systems.
+The first hop is:
+
+```text
+browser -> WebRTC -> relay (MediaMTX)
+```
+
+MediaMTX is the live relay. It receives WebRTC streams from multiple publishers, keeps each stream on its own path, and gives backend encoder workers a stable place to read from. This decouples the camera from the encoder: a browser can publish to MediaMTX without knowing whether FFmpeg is currently packaging HLS, and an encoder can restart without changing the browser capture code.
+
+The HLS output remains useful for browser playback , but the live ingest boundary moves from "FFmpeg owns the camera" to "the browser owns the camera, MediaMTX owns live relay, and FFmpeg owns encoding/package output."
+
+## Stream Model
+
+Every live stream has a unique `streamId`.
+
+Example stream identity:
+
+```text
+Publisher user: user-123
+Stream ID: stream-abc
+MediaMTX path: live/stream-abc
+Browser publish URL: http://<server-lan-ip>:8889/live/stream-abc/publish
+WHIP publish URL: http://<server-lan-ip>:8889/live/stream-abc/whip
+HLS output: backend/media/live/stream-abc/
+Playback URL: http://<server-lan-ip>/hls/stream-abc/master.m3u8
+```
+
+Multiple publishers can be live at the same time because each publisher writes to a different MediaMTX path and each encoder worker writes to a different output directory.
+
+One viewer can only watch one live stream at a time. This is enforced by the frontend and backend session model:
+
+- The viewer page owns one active player instance.
+- Selecting a new stream stops the current player before loading the next stream.
+- The backend records at most one active viewed `streamId` per viewer session.
+- The API rejects a second simultaneous watch session from the same viewer unless the previous one is stopped or replaced.
 
 ## Component Responsibilities
 
-### 1. Source
+### 1. Publisher Browser
 
-The source can be one of these during Chapter 1:
+The publisher browser owns camera capture.
 
-- A webcam or capture device.
-- A local video file looped by FFmpeg.
-- FFmpeg's built-in test source for repeatable development.
+Responsibilities:
 
-The first implementation should support a deterministic test source or looped local file so the pipeline can be tested without depending on a physical camera.
+- Request camera and microphone permission with `getUserMedia`.
+- Capture video and optional audio.
+- Publish the media to MediaMTX over WebRTC.
+- Attach the stream to a backend-created `streamId`.
+- Show publish status such as connecting, live, stopped, or failed.
 
-### 2. FFmpeg Encoder and HLS Packager
+The browser should not run the HLS encoder. Its job is capture and WebRTC publishing only.
 
-FFmpeg is responsible for turning the source into browser-playable HLS:
+### 2. MediaMTX Relay
 
-- Decode the incoming source.
+MediaMTX is the relay between browser publishers, encoder workers, and optional low-latency viewers.
+
+Responsibilities:
+
+- Accept WebRTC publish sessions from browser clients.
+- Maintain one path per live stream, such as `live/<streamId>`.
+- Allow multiple live streams to exist at the same time.
+- Provide a stable source endpoint for encoder workers.
+- Optionally provide direct WebRTC playback for future low-latency viewing.
+- Report path/session state through logs or API where available.
+
+MediaMTX should be treated as the live source of truth for active media paths. The backend owns stream metadata and orchestration, but MediaMTX owns the real-time media relay.
+
+### 3. Encoder and HLS Packager
+
+The encoder is decoupled from camera capture. It reads a stream from MediaMTX and produces browser-playable HLS.
+
+Recommended Chapter 1 encoder behavior:
+
+- Start one encoder worker per active stream.
+- Read from the stream's MediaMTX path.
 - Encode video as H.264.
 - Encode audio as AAC when audio is available.
-- Produce `.ts` or fragmented MP4 segments.
-- Maintain a live `.m3u8` manifest.
+- Produce a multi-resolution HLS ladder.
+- Maintain a master playlist for the stream.
 - Delete old segments so disk usage stays bounded.
 
-Recommended starter profile:
+Recommended starter rendition ladder:
 
 ```text
-Video codec: H.264
-Audio codec: AAC
-Resolution: 720p for LAN testing
-Frame rate: 25 or 30 fps
+360p: 640x360, 800 kbps video
+480p: 854x480, 1400 kbps video
+720p: 1280x720, 2800 kbps video
+Audio: AAC, 128 kbps
 HLS segment length: 2 seconds
 Live playlist size: 5 segments
-Expected latency: roughly 8-15 seconds
+Expected HLS latency: roughly 8-15 seconds
 ```
 
 The exact latency depends on encoder settings, segment duration, playlist size, player buffering, and LAN conditions.
 
-### 3. Application Server
+Example output layout:
 
-The application server should not proxy every video segment in Chapter 1. Its job is orchestration and observability:
+```text
+backend/media/live/
+  stream-abc/
+    master.m3u8
+    360p/
+      index.m3u8
+      segment_00001.ts
+    480p/
+      index.m3u8
+      segment_00001.ts
+    720p/
+      index.m3u8
+      segment_00001.ts
+  stream-def/
+    master.m3u8
+    360p/
+    480p/
+    720p/
+```
 
-- Start and stop the FFmpeg process.
-- Expose stream status such as running, stopped, source type, uptime, and output path.
-- Optionally expose a simple control API for the frontend.
-- Keep logs for FFmpeg startup and failures.
+### 4. Application Server
 
-Video files should be served by nginx, not by the application server, because static segment delivery is exactly what nginx is good at.
+The application server should not proxy every video segment. Its job is orchestration, stream metadata, and observability.
+
+Responsibilities:
+
+- Create stream records.
+- Authorize a publisher to publish to a specific `streamId`.
+- Start and stop per-stream encoder workers.
+- Track MediaMTX path names and HLS output paths.
+- Expose live stream lists and per-stream status.
+- Enforce one active watched stream per viewer session.
+- Keep logs for publisher setup, encoder startup, MediaMTX state, and failures.
+
+Video files should be served by nginx, not by the application server.
 
 #### API Contract
 
@@ -78,68 +165,78 @@ The backend exposes the following endpoints for the frontend and CLI:
 
 | Method | Path | Request Body | Response | Purpose |
 |---|---|---|---|---|
-| `POST` | `/api/stream/start` | `{ "source": "test" \| "file" \| "camera" }` | `{ "success": true, "pid": 1234 }` | Start FFmpeg with the given source type |
-| `POST` | `/api/stream/stop` | — | `{ "success": true }` | Stop the running FFmpeg process |
-| `GET` | `/api/stream/status` | — | `{ "running": bool, "source": string, "uptime": number, "output": string }` | Return current stream state |
+| `POST` | `/api/streams` | `{ "title": "Desk cam" }` | `{ "streamId": "stream-abc", "publishPath": "live/stream-abc" }` | Create a stream record and publish target |
+| `POST` | `/api/streams/:streamId/publish/start` | `{ "userId": "user-123" }` | `{ "success": true, "publishUrl": "http://<server-lan-ip>:8889/live/stream-abc/publish", "whipUrl": "http://<server-lan-ip>:8889/live/stream-abc/whip" }` | Prepare browser WebRTC publishing through MediaMTX |
+| `POST` | `/api/streams/:streamId/encoder/start` | `{ "renditions": ["360p", "480p", "720p"] }` | `{ "success": true, "pid": 1234 }` | Start the encoder worker for one stream |
+| `POST` | `/api/streams/:streamId/stop` | none | `{ "success": true }` | Stop publishing metadata and the encoder worker for one stream |
+| `GET` | `/api/streams` | none | `{ "streams": [...] }` | List active and recently active streams |
+| `GET` | `/api/streams/:streamId/status` | none | `{ "streamId": "stream-abc", "state": "live", "renditions": [...], "output": "..." }` | Return one stream's state |
+| `POST` | `/api/viewer/session` | `{ "viewerId": "viewer-1", "streamId": "stream-abc" }` | `{ "success": true, "playbackUrl": "http://<server-lan-ip>/hls/stream-abc/master.m3u8" }` | Start or replace the viewer's single active stream |
+| `DELETE` | `/api/viewer/session` | `{ "viewerId": "viewer-1" }` | `{ "success": true }` | Stop the viewer's active stream |
 
-The `status` endpoint is the most important — the frontend polls it for display. `uptime` is in seconds since FFmpeg started; `output` is the HLS directory path. `running: false` with no PID means the stream was never started or has been stopped cleanly; `running: false` with a non-null `pid` signals a crash (FFmpeg exited unexpectedly).
+The backend stores stream state by `streamId`, not as one global stream. A crashed encoder for `stream-abc` must not stop `stream-def`.
 
 #### Crash Handling
 
-The backend monitors the FFmpeg child process and handles failures:
+The backend monitors each encoder worker independently:
 
-1. **Detection** — register a `close` / `exit` event on the child process. When FFmpeg exits with a non-zero code, capture the exit code and stderr tail.
-2. **Status reflection** — the `status` endpoint returns `running: false` with the captured exit code and a truncated error message so the frontend can display a failure state.
-3. **Stale segment cleanup** — on crash, the backend removes any partial `.ts` segment and rewrites `index.m3u8` to an empty manifest (or a status placeholder). This prevents players from fetching a manifest that lists missing segments.
-4. **No auto-restart** — do not automatically restart FFmpeg in Chapter 1. A crashed stream stays stopped until the user explicitly calls `POST /api/stream/start` again. Auto-restart masks the failure without fixing it and complicates state management.
-5. **Process group** — launch FFmpeg in its own process group so killing the backend does not orphan the encoder.
+1. **Detection** - register a `close` or `exit` event on every encoder child process. When one exits with a non-zero code, capture the exit code and stderr tail.
+2. **Status reflection** - the affected stream returns `state: "failed"` with the captured exit code and a truncated error message.
+3. **Stream isolation** - other streams continue running when one stream fails.
+4. **Stale segment cleanup** - on crash, remove partial files only inside that stream's output directory.
+5. **No auto-restart** - do not automatically restart encoders in Chapter 1. A failed stream stays failed until the publisher or operator starts it again.
+6. **Process group** - launch each encoder in its own process group so shutdown does not orphan encoder processes.
 
-### 4. Startup and Teardown Protocol
+## Startup and Teardown Protocol
 
 **Startup sequence:**
 
-1. On backend launch, ensure `backend/media/live/` exists (create if missing). If creation fails, log the error and refuse API requests.
-2. Clear any stale HLS files from a previous run — remove all `.ts`, `.m3u8`, and `.mp4` files in the directory so players never serve stale segments.
-3. Start the HTTP server. The `/api/stream/start` endpoint is now reachable.
-4. On `POST /api/stream/start`, spawn FFmpeg as a child process, record the PID and start time, and write HLS output to the media directory.
-5. Wait several seconds for FFmpeg to produce the first segment, then confirm the manifest exists. If it does not, set status to `failed` and log FFmpeg stderr.
+1. On backend launch, ensure `backend/media/live/` exists. If creation fails, log the error and refuse stream creation.
+2. Start MediaMTX and confirm its WebRTC publish endpoint is reachable.
+3. Clear stale HLS files from previous runs only during local development, or mark old stream directories as expired before deleting them.
+4. Start the HTTP server.
+5. On `POST /api/streams`, create a stream record and assign a unique MediaMTX path.
+6. When the browser publisher starts, publish WebRTC to MediaMTX at that path.
+7. Start the per-stream encoder worker and point it at the MediaMTX path.
+8. Wait for the encoder to produce the first rendition playlists and `master.m3u8`.
+9. Mark the stream `live` only after MediaMTX has a publisher and the HLS master playlist exists.
 
 **Teardown sequence:**
 
-1. On `POST /api/stream/stop`, send `SIGTERM` to the FFmpeg child process.
-2. Wait up to 5 seconds for graceful exit. If FFmpeg has not exited, send `SIGKILL`.
-3. Reset status to `running: false`, clear PID and uptime.
-4. On backend shutdown (`SIGTERM` / `SIGINT`), kill the FFmpeg child process first, then exit.
+1. On `POST /api/streams/:streamId/stop`, stop that stream's encoder worker.
+2. Mark the stream as stopped in backend metadata.
+3. End the browser publish session if it is still connected.
+4. Remove or expire that stream's HLS files without touching other stream directories.
+5. On backend shutdown, stop all encoder workers first, then stop or detach from MediaMTX.
 
-### 5. HLS Origin Directory
+## HLS Origin Directory
 
-FFmpeg writes generated HLS files to a local directory, for example:
+FFmpeg writes generated HLS files to per-stream directories:
 
 ```text
-backend/media/live/
-  index.m3u8
-  segment_00001.ts
-  segment_00002.ts
-  segment_00003.ts
+backend/media/live/<streamId>/master.m3u8
+backend/media/live/<streamId>/<rendition>/index.m3u8
+backend/media/live/<streamId>/<rendition>/segment_00001.ts
 ```
 
-This directory acts as the local origin for nginx. It should be writable by the backend or FFmpeg process and readable by nginx.
+This structure prevents concurrent streams from overwriting each other's manifests and segments. It also lets nginx serve all streams through one stable `/hls/` URL prefix.
 
-### 6. nginx Cache Server
+## nginx Cache Server
 
-nginx is the local delivery layer for viewers. Even on a LAN, the cache layer matters because multiple viewers will repeatedly request the same manifest and segment files. nginx can handle those static requests more efficiently than the application server and keeps the future architecture closer to a real OTT origin/cache/CDN model.
+nginx is the local HLS delivery layer for viewers. Even on a LAN, the cache layer matters because multiple viewers may repeatedly request the same manifest and segment files for the same selected stream.
 
 Recommended behavior:
 
 - Serve `.m3u8` manifests with a very short cache lifetime or no cache.
 - Serve media segments with a short cache lifetime.
 - Add CORS headers if the frontend is hosted on a different port.
-- Expose the stream at a stable LAN URL.
+- Expose all stream outputs under a stable LAN URL prefix.
+- Do not expose directory listings.
 
 Example playback URL:
 
 ```text
-http://<server-lan-ip>/hls/index.m3u8
+http://<server-lan-ip>/hls/<streamId>/master.m3u8
 ```
 
 #### Recommended nginx Config
@@ -149,24 +246,21 @@ server {
     listen 80;
     server_name _;
 
-    # HLS stream — media segments
     location /hls/ {
         alias D:/OTT-Platform/backend/media/live/;
+        autoindex off;
 
-        # m3u8 manifest: no caching so players always fetch the latest
         location ~ \.m3u8$ {
             add_header Cache-Control "no-cache, no-store, must-revalidate";
             add_header Access-Control-Allow-Origin "*";
         }
 
-        # ts segments: brief cache for repeated viewer requests
         location ~ \.ts$ {
             add_header Cache-Control "public, max-age=10";
             add_header Access-Control-Allow-Origin "*";
         }
     }
 
-    # Optional — serve built frontend from nginx in production-like testing
     location / {
         root frontend/dist;
         try_files $uri /index.html;
@@ -174,29 +268,37 @@ server {
 }
 ```
 
-This config assumes nginx is running on the same machine as FFmpeg and the backend. Adjust the `alias` path to match the actual absolute path on your machine. The CORS `Access-Control-Allow-Origin: *` headers ensure the player can fetch segments when the frontend is served from a different port (e.g., Vite dev server on `:5173`).
+This config assumes nginx is running on the same machine as MediaMTX, FFmpeg, and the backend. Adjust the `alias` path to match the actual absolute path on the machine.
 
-### 7. Viewer
+## Viewer
 
-The viewer can be:
+The viewer is a browser page that can list active streams and play one selected stream.
 
-- A browser page using `hls.js` for browsers that do not support HLS natively.
-- Safari or another browser with native HLS support.
-- VLC or another media player pointed directly at the `.m3u8` URL.
+Responsibilities:
 
-The frontend should keep Chapter 1 simple: one player page, a visible stream URL, and basic status information from the application server.
+- Fetch active streams from the backend.
+- Start one viewer session for the selected stream.
+- Load that stream's HLS `master.m3u8`.
+- Allow the player to choose from the available renditions automatically, or expose a manual quality selector later.
+- Stop the current player before loading another stream.
+
+The Chapter 1 viewer should not show two live players at the same time. This keeps the browser resource profile predictable and makes the viewer session model simple.
 
 ## End-to-End Data Flow
 
 ```text
-1. Source produces live video.
-2. FFmpeg reads the source.
-3. FFmpeg encodes the stream into H.264/AAC.
-4. FFmpeg writes live HLS manifest and segment files.
-5. nginx reads the HLS files from disk.
-6. Viewers request the manifest from nginx.
-7. Viewers repeatedly request the listed media segments.
-8. The player buffers a few segments and plays the live stream.
+1. Publisher creates a stream in the backend.
+2. Backend assigns a streamId and MediaMTX path.
+3. Publisher browser captures camera media.
+4. Publisher browser publishes media over WebRTC to MediaMTX.
+5. MediaMTX relays the stream on live/<streamId>.
+6. Encoder worker reads that stream from MediaMTX.
+7. Encoder worker creates 360p, 480p, and 720p HLS renditions.
+8. Encoder worker writes HLS files under backend/media/live/<streamId>/.
+9. nginx serves the stream at /hls/<streamId>/master.m3u8.
+10. Viewer selects one stream.
+11. Backend creates or replaces the viewer's single active watch session.
+12. Viewer player loads and plays the selected stream.
 ```
 
 ## LAN Deployment Shape
@@ -206,72 +308,95 @@ For the first milestone, all server-side components can run on one machine:
 ```text
 Developer/server machine
   - Backend process
-  - FFmpeg process
-  - HLS output directory
+  - MediaMTX relay
+  - One encoder worker per active stream
+  - Per-stream HLS output directories
   - nginx
   - Frontend dev server or built frontend
 
+Publisher devices on same LAN
+  - Browser
+  - Camera and microphone
+  - Publish to MediaMTX over WebRTC
+
 Viewer devices on same LAN
-  - Browser or VLC
-  - Access stream by server LAN IP
+  - Browser
+  - Watch one selected stream at a time
 ```
 
 The server machine must allow inbound LAN traffic on the chosen ports. For example:
 
 - Frontend: `http://<server-lan-ip>:5173`
 - Backend API: `http://<server-lan-ip>:4000`
-- HLS through nginx: `http://<server-lan-ip>/hls/index.m3u8`
+- HLS through nginx: `http://<server-lan-ip>/hls/<streamId>/master.m3u8`
+- MediaMTX browser publish endpoint: `http://<server-lan-ip>:8889/live/<streamId>/publish`
+- MediaMTX WHIP publish endpoint: `http://<server-lan-ip>:8889/live/<streamId>/whip`
 
-In production-like local testing, prefer serving the built frontend and HLS through nginx so viewers need one base host.
+In production-like local testing, prefer serving the built frontend and HLS through nginx so viewers need one base host. MediaMTX still remains the relay for publisher WebRTC ingest.
 
 ## Key Design Decisions
 
-1. **Use HLS for Chapter 1 delivery.** HLS is segment-based, widely supported, and naturally supports many viewers requesting the same content. It is a good fit for reliable LAN playback where several viewers need to watch the same live feed.
+1. **Use MediaMTX as the relay.** MediaMTX gives the system a dedicated live media layer. It can accept browser WebRTC publishing, keep streams separated by path, and provide encoder workers with stable inputs.
 
-2. **Use FFmpeg for encode and packaging.** Encoding is required because browsers and media players need predictable codecs and container formats. FFmpeg is the standard local tool for this stage because it can ingest many source types, encode H.264/AAC, and write HLS output directly.
+2. **Decouple camera capture from encoding.** The browser captures and publishes media. FFmpeg reads from the relay and handles encoding/package output. This keeps camera permissions, browser capture, relay state, and encoding failures from being tangled together.
 
-3. **Put nginx in front of the HLS files.** The application server should not spend its time serving every media segment. nginx is better suited to static file delivery and short-lived caching. This also mirrors the later OTT pattern where an origin/cache layer sits between packaging and viewers.
+3. **Support multiple concurrent streams by streamId.** Every stream has its own MediaMTX path, encoder worker, status record, and HLS output directory. A failure in one stream should not affect another stream.
 
-4. **Run locally first, but keep boundaries clear.** FFmpeg, backend, HLS storage, nginx, and frontend can all run on one LAN machine for now. The design still separates responsibilities so each component can be replaced or scaled later.
+4. **Generate multiple resolutions per stream.** A small rendition ladder makes the design closer to real OTT delivery and lets viewers on weaker devices or weaker Wi-Fi choose a lower bitrate.
+
+5. **Limit each viewer to one active stream.** Chapter 1 should prove multi-stream publishing without turning the viewer into a multi-camera wall. One active stream per viewer keeps playback behavior, bandwidth use, and session tracking simpler.
+
+6. **Keep nginx in front of HLS files.** The application server should not serve video segments. nginx is better suited to static file delivery and short-lived caching.
 
 ## Success Criteria
 
 Chapter 1 is complete when:
 
-- A live `.m3u8` URL is available on the LAN.
-- A browser or VLC can play the stream from another device.
-- Several viewers can watch at the same time without the backend becoming the bottleneck.
+- Two or more browser publishers can live stream at the same time.
+- Each publisher sends camera media through `browser -> WebRTC -> MediaMTX`.
+- Each live stream has its own `streamId`, MediaMTX path, encoder worker, and HLS output directory.
+- A stream is available on the LAN at `/hls/<streamId>/master.m3u8`.
+- At least 360p, 480p, and 720p renditions are generated for each live stream.
+- A viewer can select and watch one live stream at a time.
+- Switching streams stops the previous player before starting the next one.
 - The stream path can be traced as:
 
 ```text
-source -> FFmpeg encode/package -> HLS files -> nginx cache -> player
+browser camera -> WebRTC -> MediaMTX relay -> encoder/package -> HLS files -> nginx cache -> player
 ```
 
-- Logs or status output can show whether FFmpeg is running and where the HLS output is being written.
+- Logs or status output can show which streams are live, which encoder processes are running, and where each stream's HLS output is written.
 
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Browser cannot play the stream | Viewers see a blank player | Use `hls.js` in the frontend and test with VLC as a control |
-| FFmpeg source differs by machine | Stream startup fails | Start with a test source or looped file before adding webcam capture |
+| Browser cannot publish WebRTC to MediaMTX | Publisher cannot go live | Start with one browser and one MediaMTX path before adding multi-stream orchestration |
+| Encoder cannot read from MediaMTX | HLS output is never produced | Test MediaMTX ingest and encoder input independently before wiring backend automation |
+| Two streams write to the same output path | Manifests and segments overwrite each other | Require unique `streamId` directories and validate paths before starting encoders |
+| One stream crash affects all streams | Other publishers are interrupted | Track one process and status record per stream |
+| CPU is overloaded by multiple encoders | Streams stutter or fail | Start with a small rendition ladder and cap concurrent streams based on machine capacity |
 | Manifest is cached too aggressively | Player falls behind or stalls | Configure nginx to avoid long caching for `.m3u8` files |
 | Segments are deleted too quickly | Player requests missing files | Keep enough live playlist segments for player buffering |
-| Firewall blocks LAN access | Other devices cannot connect | Open only the required local ports on the server machine |
+| Viewer opens multiple streams at once | Browser and LAN bandwidth spike | Enforce one active viewer session and one player instance |
+| Firewall blocks LAN access | Other devices cannot publish or view | Open only the required local ports on the server machine |
 
 ## Initial Implementation Plan
 
-1. Create an FFmpeg command that generates a live HLS stream from a test source or looped file.
-2. Add backend controls to start, stop, and inspect the FFmpeg process.
-3. Write HLS output into a known local media directory.
-4. Configure nginx to serve `/hls/` from that directory with correct content types and cache behavior.
-5. Build a simple frontend player page that loads the nginx HLS URL.
-6. Test with at least three simultaneous viewers on the LAN.
+1. Install and configure MediaMTX for LAN WebRTC publishing.
+2. Add backend stream records keyed by `streamId`.
+3. Build a publisher page that captures camera media and publishes WebRTC to MediaMTX.
+4. Add per-stream encoder orchestration that reads from MediaMTX and writes multi-resolution HLS.
+5. Write HLS output into `backend/media/live/<streamId>/`.
+6. Configure nginx to serve `/hls/<streamId>/master.m3u8`.
+7. Build a viewer page that lists live streams and plays one selected stream.
+8. Enforce one active viewed stream per viewer session.
+9. Test with at least two simultaneous publishers and multiple viewers on the LAN.
 
 ## Decision Write-Up
 
-For the first chapter I chose an HLS-based live streaming architecture. The goal is to prove that a live stream can be encoded, packaged, cached, and watched by several people on the local network. HLS fits that goal because it turns the live stream into a manifest plus small media segments. Each viewer can independently request the same files, and nginx can serve those files efficiently from a local cache layer.
+For the first chapter I chose a MediaMTX-centered live architecture because the platform now needs to support multiple people publishing at the same time. A single FFmpeg process attached directly to a camera is too tightly coupled for that requirement. Instead, each publisher browser captures camera media and publishes it over WebRTC to a unique MediaMTX path.
 
-FFmpeg is the encoder and packager because raw camera or browser video is not enough for reliable playback. The stream needs predictable codecs, a stable segment format, and a live playlist that players understand. The application server stays focused on process control and status reporting rather than serving every video segment. That keeps the video delivery path simple and avoids making the backend the bottleneck when multiple viewers join.
+MediaMTX acts as the relay and live source boundary. That lets the backend manage stream metadata while MediaMTX handles real-time media sessions. FFmpeg is still used where it is strongest: reading a stable live input, encoding predictable H.264/AAC outputs, and producing HLS playlists and segments for browser playback.
 
-nginx sits in front of the generated HLS files because even a small LAN stream benefits from a dedicated static delivery layer. The manifest should remain fresh, while media segments can be cached briefly. This design is small enough to run on one machine but still teaches the same basic path used by larger OTT systems: source, encode, package, cache, and player.
+Each stream gets its own identity, relay path, encoder process, and HLS output directory. That isolation is what allows two publishers to be live at the same time without overwriting manifests or sharing process state. The viewer experience is intentionally constrained to one selected stream at a time, which keeps Chapter 1 focused on multi-stream publishing and reliable playback instead of building a multi-view monitoring wall.
