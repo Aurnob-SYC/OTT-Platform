@@ -10,6 +10,7 @@ function assertRequiredConfig(config) {
   if (!config.backend.baseUrl) missing.push("BACKEND_BASE_URL");
   if (!config.mediaMtx.webRtcBaseUrl) missing.push("MEDIAMTX_WEBRTC_BASE_URL");
   if (!config.mediaMtx.apiBaseUrl) missing.push("MEDIAMTX_API_BASE_URL");
+  if (!config.mediaMtx.rtspBaseUrl) missing.push("MEDIAMTX_RTSP_BASE_URL");
   if (!config.nginx.hlsBaseUrl) missing.push("NGINX_HLS_BASE_URL");
   if (!config.hls.mediaRoot) missing.push("HLS_MEDIA_ROOT");
 
@@ -69,6 +70,7 @@ function getRuntimeSummary(config) {
       backendApi: config.backend.baseUrl,
       mediaMtxWebRtc: config.mediaMtx.webRtcBaseUrl,
       mediaMtxApi: config.mediaMtx.apiBaseUrl,
+      mediaMtxRtsp: config.mediaMtx.rtspBaseUrl,
       nginxHls: config.nginx.hlsBaseUrl,
     },
     hls: {

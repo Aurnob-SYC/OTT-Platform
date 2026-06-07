@@ -7,6 +7,7 @@ const DEFAULTS = {
   backendPort: 4000,
   mediaMtxWebRtcPort: 8889,
   mediaMtxApiPort: 9997,
+  mediaMtxRtspPort: 8554,
   nginxPort: 80,
   mediaRootRelative: path.join("media", "live"),
 };
@@ -66,6 +67,26 @@ function normalizeBaseUrl(value, key) {
   return url.toString().replace(/\/$/, "");
 }
 
+function normalizeMediaBaseUrl(value, key, allowedProtocols) {
+  let url;
+
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${key} must be a valid URL.`);
+  }
+
+  if (!allowedProtocols.includes(url.protocol)) {
+    throw new Error(`${key} must use one of: ${allowedProtocols.join(", ")}.`);
+  }
+
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  url.search = "";
+  url.hash = "";
+
+  return url.toString().replace(/\/$/, "");
+}
+
 function createRuntimeConfig(env = process.env, options = {}) {
   // Build one normalized config object so the rest of the backend does not need to
   // know about raw env variables or string parsing rules.
@@ -79,6 +100,7 @@ function createRuntimeConfig(env = process.env, options = {}) {
     DEFAULTS.mediaMtxWebRtcPort,
   );
   const mediaMtxApiPort = readPort(env, "MEDIAMTX_API_PORT", DEFAULTS.mediaMtxApiPort);
+  const mediaMtxRtspPort = readPort(env, "MEDIAMTX_RTSP_PORT", DEFAULTS.mediaMtxRtspPort);
   const nginxPort = readPort(env, "NGINX_PORT", DEFAULTS.nginxPort);
 
   const mediaRoot = path.resolve(
@@ -93,6 +115,11 @@ function createRuntimeConfig(env = process.env, options = {}) {
   const mediaMtxApiBaseUrl = normalizeBaseUrl(
     readString(env, "MEDIAMTX_API_BASE_URL", `http://${lanHost}:${mediaMtxApiPort}`),
     "MEDIAMTX_API_BASE_URL",
+  );
+  const mediaMtxRtspBaseUrl = normalizeMediaBaseUrl(
+    readString(env, "MEDIAMTX_RTSP_BASE_URL", `rtsp://127.0.0.1:${mediaMtxRtspPort}`),
+    "MEDIAMTX_RTSP_BASE_URL",
+    ["rtsp:", "rtsps:"],
   );
   const nginxHlsBaseUrl = normalizeBaseUrl(
     readString(
@@ -111,6 +138,7 @@ function createRuntimeConfig(env = process.env, options = {}) {
       backend: backendPort,
       mediaMtxWebRtc: mediaMtxWebRtcPort,
       mediaMtxApi: mediaMtxApiPort,
+      mediaMtxRtsp: mediaMtxRtspPort,
       nginx: nginxPort,
     },
     backend: {
@@ -130,8 +158,10 @@ function createRuntimeConfig(env = process.env, options = {}) {
     mediaMtx: {
       webRtcBaseUrl: mediaMtxBaseUrl,
       apiBaseUrl: mediaMtxApiBaseUrl,
+      rtspBaseUrl: mediaMtxRtspBaseUrl,
       webRtcPort: mediaMtxWebRtcPort,
       apiPort: mediaMtxApiPort,
+      rtspPort: mediaMtxRtspPort,
     },
     nginx: {
       hlsBaseUrl: nginxHlsBaseUrl,

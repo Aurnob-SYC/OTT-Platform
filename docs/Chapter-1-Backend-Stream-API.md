@@ -52,7 +52,7 @@ The API uses the in-memory stream store from:
 backend/src/streams.js
 ```
 
-This keeps API routing separate from the stream metadata model and leaves room for Part 6 to add a real FFmpeg encoder worker without changing the public routes.
+This keeps API routing separate from the stream metadata model. Part 6 connects the encoder start and stop routes to the FFmpeg worker manager in `backend/src/encoderWorker.js`.
 
 ## Endpoint Summary
 
@@ -60,8 +60,8 @@ This keeps API routing separate from the stream metadata model and leaves room f
 | --- | --- | --- |
 | `POST` | `/api/streams` | Create a stream record and return its MediaMTX publish path. |
 | `POST` | `/api/streams/:streamId/publish/start` | Prepare browser publishing and return MediaMTX publish URLs. |
-| `POST` | `/api/streams/:streamId/encoder/start` | Record the encoder start transition for one stream. |
-| `POST` | `/api/streams/:streamId/stop` | Stop one stream record and clear viewer sessions watching it. |
+| `POST` | `/api/streams/:streamId/encoder/start` | Start the encoder worker for one stream. |
+| `POST` | `/api/streams/:streamId/stop` | Stop one stream record, stop its encoder worker, and clear viewer sessions watching it. |
 | `GET` | `/api/streams` | List active and recently active streams. |
 | `GET` | `/api/streams/:streamId/status` | Return one stream status object. |
 | `POST` | `/api/viewer/session` | Start or replace one viewer's active stream. |
@@ -159,7 +159,7 @@ Response:
 ```json
 {
   "success": true,
-  "pid": null,
+  "pid": 4321,
   "renditions": ["360p", "480p", "720p"],
   "stream": {
     "streamId": "stream-alpha",
@@ -168,14 +168,7 @@ Response:
 }
 ```
 
-Part 4 records encoder orchestration metadata only. It does not spawn FFmpeg yet. The encoder status includes:
-
-```text
-orchestration: pending-ffmpeg-worker
-pid: null
-```
-
-Part 6 should replace this placeholder behavior with a real per-stream encoder worker while preserving the endpoint shape.
+Part 6 starts a real per-stream FFmpeg worker. The encoder status includes the process PID, MediaMTX RTSP input URL, HLS output directory, selected renditions, command line, and bounded stderr tail.
 
 Allowed source states:
 
@@ -208,7 +201,7 @@ Response:
 }
 ```
 
-Stopping one stream only updates that stream record. If any viewer sessions are currently watching it, those sessions are cleared. HLS files are not deleted by this endpoint in Part 4.
+Stopping one stream stops only that stream's encoder worker and updates only that stream record. If any viewer sessions are currently watching it, those sessions are cleared. HLS files are not deleted by this endpoint.
 
 ## Stream Listing
 
@@ -372,7 +365,7 @@ The tests verify:
 
 - Stream creation returns `streamId`, `publishPath`, and a status object.
 - Publishing start returns MediaMTX publish and WHIP URLs.
-- Encoder start records Part 4 metadata without spawning FFmpeg.
+- Encoder start records real worker metadata through an injected fake encoder manager.
 - Status and listing endpoints return active and recently active streams.
 - Invalid stream IDs and missing streams return useful JSON errors.
 - One viewer session can start, replace its active stream, and clear it.
@@ -385,10 +378,6 @@ cd backend
 npm test
 npm run check
 ```
-
-## Later Parts
-
-Part 6 should connect `POST /api/streams/:streamId/encoder/start` to a real per-stream FFmpeg worker and update the returned `pid`.
 
 Part 8 should mark streams `live` only after HLS readiness checks pass.
 

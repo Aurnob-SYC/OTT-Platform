@@ -66,7 +66,12 @@ function createInitialEncoderStatus() {
     startedAt: null,
     stoppedAt: null,
     exitCode: null,
+    exitSignal: null,
     stderrTail: "",
+    inputUrl: null,
+    outputDir: null,
+    renditions: [],
+    commandLine: null,
   };
 }
 

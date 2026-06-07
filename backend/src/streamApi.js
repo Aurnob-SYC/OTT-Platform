@@ -2,6 +2,10 @@
 
 const express = require("express");
 
+const {
+  RENDITION_DEFINITIONS,
+  createEncoderWorkerManager,
+} = require("./encoderWorker");
 const { STREAM_STATES, createStreamStore } = require("./streams");
 const { assertStreamId } = require("./urlBuilders");
 const {
@@ -10,6 +14,7 @@ const {
 } = require("./viewerSessions");
 
 const DEFAULT_RENDITIONS = Object.freeze(["360p", "480p", "720p"]);
+const SUPPORTED_RENDITIONS = new Set(Object.keys(RENDITION_DEFINITIONS));
 
 class ApiError extends Error {
   constructor(statusCode, code, message) {
@@ -64,7 +69,14 @@ function readRenditions(body) {
     throw badRequest("renditions must be a non-empty array of strings.");
   }
 
-  return value.map((rendition) => rendition.trim());
+  const renditions = value.map((rendition) => rendition.trim());
+  const unsupported = renditions.filter((rendition) => !SUPPORTED_RENDITIONS.has(rendition));
+
+  if (unsupported.length > 0) {
+    throw badRequest(`Unsupported renditions: ${unsupported.join(", ")}.`);
+  }
+
+  return renditions;
 }
 
 function requireStreamStatus(streamStore, streamId) {
@@ -128,6 +140,46 @@ function createStreamApi(config, options = {}) {
   const streamStore = options.streamStore || createStreamStore(config, options.streamStoreOptions);
   const viewerSessionStore =
     options.viewerSessionStore || createViewerSessionStore(options.viewerSessionOptions);
+  const encoderManager =
+    options.encoderManager ||
+    createEncoderWorkerManager(config, {
+      onEncoderExit: (event) => {
+        try {
+          const current = streamStore.getStream(event.streamId);
+
+          if (event.expectedStop || current.state === STREAM_STATES.STOPPED) {
+            streamStore.markStopped(event.streamId, {
+              encoder: {
+                exitCode: event.exitCode,
+                exitSignal: event.exitSignal,
+                stderrTail: event.stderrTail,
+                stoppedAt: event.stoppedAt,
+              },
+            });
+            return;
+          }
+
+          streamStore.markFailed(event.streamId, {
+            encoder: {
+              exitCode: event.exitCode,
+              exitSignal: event.exitSignal,
+              stderrTail: event.stderrTail,
+              stoppedAt: event.stoppedAt,
+            },
+            error: {
+              code: "ENCODER_EXITED",
+              message:
+                event.error && event.error.message
+                  ? event.error.message
+                  : `FFmpeg exited with code ${event.exitCode}.`,
+            },
+          });
+        } catch {
+          // If the stream has already disappeared in a future implementation, there is
+          // no other stream to update. The failing worker stays isolated to its streamId.
+        }
+      },
+    });
   const router = express.Router();
 
   router.post("/streams", (request, response, next) => {
@@ -201,16 +253,22 @@ function createStreamApi(config, options = {}) {
       ensureCanStartEncoder(current);
 
       const renditions = readRenditions(request.body);
-      const stream =
-        current.state === STREAM_STATES.ENCODING || current.state === STREAM_STATES.LIVE
-          ? current
-          : streamStore.markEncoding(request.params.streamId, {
-              encoder: {
-                pid: null,
-                renditions,
-                orchestration: "pending-ffmpeg-worker",
-              },
-            });
+      const startStatus = encoderManager.startEncoder(current, { renditions });
+      const markEncoderStarted =
+        current.state === STREAM_STATES.LIVE ? streamStore.markLive : streamStore.markEncoding;
+      const stream = markEncoderStarted(request.params.streamId, {
+        encoder: {
+          commandLine: startStatus.commandLine,
+          exitCode: startStatus.exitCode,
+          exitSignal: startStatus.exitSignal,
+          inputUrl: startStatus.inputUrl,
+          outputDir: startStatus.outputDir,
+          pid: startStatus.pid,
+          renditions: startStatus.renditions || renditions,
+          startedAt: startStatus.startedAt,
+          stderrTail: startStatus.stderrTail,
+        },
+      });
 
       response.status(200).json({
         success: true,
@@ -228,7 +286,15 @@ function createStreamApi(config, options = {}) {
       assertKnownStreamId(request.params.streamId);
 
       requireStreamStatus(streamStore, request.params.streamId);
-      const stream = streamStore.markStopped(request.params.streamId);
+      const stopStatus = encoderManager.stopEncoder(request.params.streamId);
+      const stream = streamStore.markStopped(request.params.streamId, {
+        encoder: {
+          exitCode: stopStatus.exitCode,
+          exitSignal: stopStatus.exitSignal,
+          stderrTail: stopStatus.stderrTail,
+          stoppedAt: stopStatus.stoppedAt,
+        },
+      });
       const clearedViewerSessions = viewerSessionStore.clearStreamSessions(request.params.streamId);
 
       response.status(200).json({
@@ -300,6 +366,7 @@ function createStreamApi(config, options = {}) {
 
   return {
     router,
+    encoderManager,
     streamStore,
     viewerSessionStore,
   };

@@ -34,6 +34,7 @@ test("creates LAN runtime defaults and stream URLs", () => {
 
   assert.equal(config.backend.port, 4000);
   assert.equal(config.mediaMtx.webRtcBaseUrl, "http://192.168.1.25:8889");
+  assert.equal(config.mediaMtx.rtspBaseUrl, "rtsp://127.0.0.1:8554");
   assert.equal(config.nginx.hlsBaseUrl, "http://192.168.1.25/hls");
   assert.equal(buildMediaMtxPath("stream-abc"), "live/stream-abc");
   assert.equal(buildPublishUrl(config, "stream-abc"), "http://192.168.1.25:8889/live/stream-abc/publish");

@@ -174,6 +174,8 @@ Dependencies:
 
 Goal: Start one FFmpeg encoder process per active stream and keep process state isolated.
 
+Companion doc: `docs/Chapter-1-Encoder-Worker-Orchestration.md`.
+
 Scope:
 
 - FFmpeg reads from MediaMTX.

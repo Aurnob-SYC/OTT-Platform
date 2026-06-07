@@ -68,3 +68,4 @@ npm test
 - Avoid deleting or rewriting unrelated user work.
 - Use the design doc as the source of truth when implementation details are unclear.
 - Every new feature should be accompanied by matching documentation in `docs/` before it is treated as visible work.
+- Keep `docs/Learning-Concepts.md` updated with simple explanations of new project concepts as they are introduced. The user is learning full-stack engineering, so explain concepts in beginner-friendly language with concrete examples from this repo.

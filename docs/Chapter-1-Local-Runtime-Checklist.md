@@ -10,6 +10,7 @@ This checklist captures the local component boundaries for Chapter 1 LAN live st
 | Backend API | `4000` | Stream metadata, orchestration, and status |
 | MediaMTX WebRTC/WHIP | `8889` | Browser publishing endpoints |
 | MediaMTX API | `9997` | Relay status checks in later parts |
+| MediaMTX RTSP | `8554` | FFmpeg reads published paths from this local endpoint |
 | nginx | `80` | HLS playback under `/hls/` |
 
 ## Backend Configuration
@@ -20,6 +21,7 @@ Required machine-specific values:
 
 - `LAN_HOST`: hostname or LAN IP publisher and viewer devices use to reach this machine.
 - `MEDIAMTX_WEBRTC_BASE_URL`: base URL for MediaMTX browser publishing.
+- `MEDIAMTX_RTSP_BASE_URL`: base URL FFmpeg uses to read MediaMTX paths.
 - `NGINX_HLS_BASE_URL`: base URL where nginx exposes `/hls/`.
 - `HLS_MEDIA_ROOT`: HLS origin root. Defaults to `backend/media/live/`.
 
@@ -28,6 +30,7 @@ The backend constructs:
 - MediaMTX publish path: `live/<streamId>`
 - Browser publish URL: `<MEDIAMTX_WEBRTC_BASE_URL>/live/<streamId>/publish`
 - WHIP URL: `<MEDIAMTX_WEBRTC_BASE_URL>/live/<streamId>/whip`
+- Encoder input URL: `<MEDIAMTX_RTSP_BASE_URL>/live/<streamId>`
 - Playback URL: `<NGINX_HLS_BASE_URL>/<streamId>/master.m3u8`
 - HLS output directory: `<HLS_MEDIA_ROOT>/<streamId>/`
 

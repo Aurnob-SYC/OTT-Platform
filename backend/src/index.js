@@ -13,6 +13,7 @@ const { buildStreamUrls } = require("./urlBuilders");
 function createApp(config, options = {}) {
   const app = express();
   const streamApi = createStreamApi(config, options.streamApiOptions);
+  app.locals.streamApi = streamApi;
 
   // Keep the API surface small and predictable for the Chapter 1 runtime checks.
   app.disable("x-powered-by");
@@ -63,7 +64,10 @@ function createApp(config, options = {}) {
 
 function createServer(config, options = {}) {
   // Express handles request routing; Node still owns the actual HTTP server socket.
-  return http.createServer(createApp(config, options));
+  const app = createApp(config, options);
+  const server = http.createServer(app);
+  server.streamApi = app.locals.streamApi;
+  return server;
 }
 
 function start() {
@@ -80,6 +84,21 @@ function start() {
     console.log(`nginx HLS base URL: ${config.nginx.hlsBaseUrl}`);
     console.log(`MediaMTX WebRTC base URL: ${config.mediaMtx.webRtcBaseUrl}`);
   });
+
+  function shutdown() {
+    console.log("Stopping encoder workers before backend shutdown...");
+    server.streamApi.encoderManager.stopAllEncoders();
+    const forceExit = setTimeout(() => {
+      process.exit(0);
+    }, 3000);
+    forceExit.unref();
+    server.close(() => {
+      process.exit(0);
+    });
+  }
+
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 
   return server;
 }

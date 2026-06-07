@@ -92,7 +92,12 @@ The store returns structured status objects shaped for future API responses:
     "startedAt": null,
     "stoppedAt": null,
     "exitCode": null,
-    "stderrTail": ""
+    "exitSignal": null,
+    "stderrTail": "",
+    "inputUrl": null,
+    "outputDir": null,
+    "renditions": [],
+    "commandLine": null
   },
   "error": null,
   "timestamps": {
@@ -123,7 +128,7 @@ It provides:
 - `hasStream(streamId)`: check for an existing stream record.
 - `listStreams(options)`: return active and recently active streams.
 - `markPublishing(streamId, details)`: move one stream to `publishing`.
-- `markEncoding(streamId, details)`: move one stream to `encoding`.
+- `markEncoding(streamId, details)`: move one stream to `encoding` and store per-stream encoder process details.
 - `markLive(streamId, details)`: move one stream to `live`.
 - `markStopped(streamId, details)`: move one stream to `stopped`.
 - `markFailed(streamId, details)`: move one stream to `failed`.
@@ -182,4 +187,6 @@ Part 4 should use this store when exposing stream APIs:
 - `GET /api/streams`
 - `GET /api/streams/:streamId/status`
 
-Part 6 and Part 7 should update the per-stream encoder status and error fields rather than introducing global encoder state.
+Part 6 updates the per-stream encoder status with FFmpeg PID, input URL, output directory, renditions, command line, stderr tail, and exit status rather than introducing global encoder state.
+
+Part 7 should keep building on those same per-stream encoder and error fields.

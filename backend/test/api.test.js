@@ -98,10 +98,48 @@ function createTestConfig() {
   );
 }
 
+function createFakeEncoderManager() {
+  const started = new Map();
+
+  return {
+    getEncoderStatus(streamId) {
+      return started.get(streamId) || null;
+    },
+    startEncoder(stream, options) {
+      const status = {
+        commandLine: `ffmpeg -i rtsp://127.0.0.1:8554/live/${stream.streamId}`,
+        exitCode: null,
+        exitSignal: null,
+        inputUrl: `rtsp://127.0.0.1:8554/live/${stream.streamId}`,
+        outputDir: stream.output.hlsOutputDir,
+        pid: 4321,
+        renditions: options.renditions,
+        running: true,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        stderrTail: "",
+      };
+
+      started.set(stream.streamId, status);
+      return status;
+    },
+    stopEncoder(streamId) {
+      started.delete(streamId);
+      return {
+        exitCode: 0,
+        exitSignal: "SIGTERM",
+        state: "stopped",
+        stderrTail: "",
+        stoppedAt: "2026-01-01T00:00:01.000Z",
+      };
+    },
+  };
+}
+
 test("exposes stream creation, publishing, encoder metadata, status, listing, and stop APIs", async () => {
   const config = createTestConfig();
   const server = createServer(config, {
     streamApiOptions: {
+      encoderManager: createFakeEncoderManager(),
       streamStoreOptions: {
         idGenerator: () => "stream-alpha",
       },
@@ -158,10 +196,11 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
 
     assert.equal(encoding.statusCode, 200);
     assert.equal(encoding.body.success, true);
-    assert.equal(encoding.body.pid, null);
+    assert.equal(encoding.body.pid, 4321);
     assert.deepEqual(encoding.body.renditions, ["360p", "480p"]);
     assert.equal(encoding.body.stream.state, "encoding");
-    assert.equal(encoding.body.stream.encoder.orchestration, "pending-ffmpeg-worker");
+    assert.equal(encoding.body.stream.encoder.inputUrl, "rtsp://127.0.0.1:8554/live/stream-alpha");
+    assert.equal(encoding.body.stream.encoder.commandLine.includes("ffmpeg"), true);
 
     const status = await requestJson(
       address.port,
@@ -190,6 +229,7 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     assert.equal(stopped.statusCode, 200);
     assert.equal(stopped.body.success, true);
     assert.equal(stopped.body.stream.state, "stopped");
+    assert.equal(stopped.body.stream.encoder.exitSignal, "SIGTERM");
 
     const listRecent = await requestJson(address.port, "GET", "/api/streams");
 

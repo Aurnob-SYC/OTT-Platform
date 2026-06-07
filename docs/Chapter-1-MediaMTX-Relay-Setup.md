@@ -10,6 +10,9 @@ Create a local `mediamtx.yml` beside the MediaMTX binary, or adapt an existing o
 api: yes
 apiAddress: 127.0.0.1:9997
 
+rtsp: yes
+rtspAddress: 127.0.0.1:8554
+
 webrtc: yes
 webrtcAddress: :8889
 webrtcEncryption: true
@@ -31,10 +34,11 @@ Notes:
 - When `webrtcEncryption` is enabled, set `MEDIAMTX_WEBRTC_BASE_URL=https://<server-lan-ip>:8889` in `backend/.env`.
 - Open the publish page with `https://<server-lan-ip>:8889/live/<streamId>/publish`.
 - `apiAddress: 127.0.0.1:9997` keeps the Control API local to the server machine for Chapter 1.
+- `rtspAddress: 127.0.0.1:8554` gives FFmpeg a local read endpoint for `rtsp://127.0.0.1:8554/live/<streamId>`.
 - The `live/<streamId>` path rule matches the backend stream ID validation.
 - `overridePublisher: false` prevents a second publisher from silently replacing an active publisher on the same path.
 
-If MediaMTX runs on another host or port, update `MEDIAMTX_WEBRTC_BASE_URL` and `MEDIAMTX_API_BASE_URL` in `backend/.env`.
+If MediaMTX runs on another host or port, update `MEDIAMTX_WEBRTC_BASE_URL`, `MEDIAMTX_API_BASE_URL`, and `MEDIAMTX_RTSP_BASE_URL` in `backend/.env`.
 
 If you are only testing on the same machine and want to avoid certificate setup temporarily, you can also open the publish page on `http://localhost:8889/live/stream-manual/publish`. The moment you switch to a LAN IP, the browser will expect a secure context.
 
@@ -100,6 +104,7 @@ MediaMTX API reads are optional relay observations, not the only source of appli
 - MediaMTX path: `live/<streamId>`
 - browser publish URL: `<MEDIAMTX_WEBRTC_BASE_URL>/live/<streamId>/publish`
 - WHIP URL: `<MEDIAMTX_WEBRTC_BASE_URL>/live/<streamId>/whip`
+- encoder input URL: `<MEDIAMTX_RTSP_BASE_URL>/live/<streamId>`
 - Control API list URL: `<MEDIAMTX_API_BASE_URL>/v3/paths/list`
 - Control API path detail URL: `<MEDIAMTX_API_BASE_URL>/v3/paths/get/live%2F<streamId>`
 
