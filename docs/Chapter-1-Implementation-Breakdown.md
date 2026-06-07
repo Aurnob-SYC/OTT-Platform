@@ -109,6 +109,8 @@ Dependencies:
 
 Goal: Expose the API contract needed by publishers, viewers, and local testing.
 
+Companion doc: `docs/Chapter-1-Backend-Stream-API.md`.
+
 Scope:
 
 - Implement the design doc API contract.

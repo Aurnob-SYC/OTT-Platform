@@ -67,3 +67,4 @@ npm test
 - When changing TypeScript, keep types explicit at module boundaries.
 - Avoid deleting or rewriting unrelated user work.
 - Use the design doc as the source of truth when implementation details are unclear.
+- Every new feature should be accompanied by matching documentation in `docs/` before it is treated as visible work.

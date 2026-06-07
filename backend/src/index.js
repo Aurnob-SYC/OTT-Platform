@@ -7,10 +7,12 @@ const { createRuntimeConfig } = require("./config");
 const { loadEnvFile } = require("./env");
 const { buildMediaMtxRelayDescriptor } = require("./mediaMtx");
 const { getRuntimeSummary, validateRuntime } = require("./runtime");
+const { createStreamApi, sendApiError } = require("./streamApi");
 const { buildStreamUrls } = require("./urlBuilders");
 
-function createApp(config) {
+function createApp(config, options = {}) {
   const app = express();
+  const streamApi = createStreamApi(config, options.streamApiOptions);
 
   // Keep the API surface small and predictable for the Chapter 1 runtime checks.
   app.disable("x-powered-by");
@@ -30,19 +32,38 @@ function createApp(config) {
     });
   });
 
+  app.use("/api", streamApi.router);
+
   app.use((request, response) => {
     response.status(404).json({
       error: "Not found",
-      message: "Chapter 1 stream APIs are not exposed yet. They are scheduled for Part 4.",
+      message: "No backend API route matches this request.",
     });
+  });
+
+  app.use((error, request, response, next) => {
+    if (response.headersSent) {
+      next(error);
+      return;
+    }
+
+    if (error && error.type === "entity.parse.failed") {
+      response.status(400).json({
+        error: "BAD_JSON",
+        message: "Request body must be valid JSON.",
+      });
+      return;
+    }
+
+    sendApiError(error, response);
   });
 
   return app;
 }
 
-function createServer(config) {
+function createServer(config, options = {}) {
   // Express handles request routing; Node still owns the actual HTTP server socket.
-  return http.createServer(createApp(config));
+  return http.createServer(createApp(config, options));
 }
 
 function start() {

@@ -23,6 +23,7 @@ browser camera -> WebRTC -> MediaMTX relay -> FFmpeg -> HLS files -> nginx -> pl
 ## Change Guidance
 
 - Update docs when code changes alter endpoints, env vars, runtime commands, external binaries, or output paths.
+- Every new feature should add or update a companion document in `docs/` using the existing Chapter 1 pattern, so code changes and visible docs land together.
 - Prefer small amendments over rewriting whole docs.
 - If a design assumption changes, update the design doc first, then align checklists and implementation breakdowns.
 - Keep examples Windows-friendly because the current repo path and nginx sample use Windows paths.
