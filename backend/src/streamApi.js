@@ -4,6 +4,7 @@ const express = require("express");
 
 const {
   RENDITION_DEFINITIONS,
+  cleanupStreamOutputDirectory,
   createEncoderWorkerManager,
 } = require("./encoderWorker");
 const { STREAM_STATES, createStreamStore } = require("./streams");
@@ -114,7 +115,8 @@ function ensureCanStartEncoder(status) {
   if (
     status.state === STREAM_STATES.PUBLISHING ||
     status.state === STREAM_STATES.ENCODING ||
-    status.state === STREAM_STATES.LIVE
+    status.state === STREAM_STATES.LIVE ||
+    status.state === STREAM_STATES.FAILED
   ) {
     return;
   }
@@ -136,6 +138,18 @@ function ensureCanView(status) {
   );
 }
 
+function buildEncoderExitMessage(event) {
+  if (event.error && event.error.message) {
+    return event.error.message;
+  }
+
+  if (event.exitSignal) {
+    return `FFmpeg exited from signal ${event.exitSignal}.`;
+  }
+
+  return `FFmpeg exited with code ${event.exitCode}.`;
+}
+
 function createStreamApi(config, options = {}) {
   const streamStore = options.streamStore || createStreamStore(config, options.streamStoreOptions);
   const viewerSessionStore =
@@ -143,6 +157,7 @@ function createStreamApi(config, options = {}) {
   const encoderManager =
     options.encoderManager ||
     createEncoderWorkerManager(config, {
+      ...(options.encoderManagerOptions || {}),
       onEncoderExit: (event) => {
         try {
           const current = streamStore.getStream(event.streamId);
@@ -159,6 +174,21 @@ function createStreamApi(config, options = {}) {
             return;
           }
 
+          let cleanup = null;
+          let cleanupError = null;
+
+          try {
+            cleanup = cleanupStreamOutputDirectory(
+              config,
+              event.streamId,
+              event.outputDir || current.output.hlsOutputDir,
+            );
+          } catch (error) {
+            cleanupError = {
+              message: error.message,
+            };
+          }
+
           streamStore.markFailed(event.streamId, {
             encoder: {
               exitCode: event.exitCode,
@@ -168,10 +198,9 @@ function createStreamApi(config, options = {}) {
             },
             error: {
               code: "ENCODER_EXITED",
-              message:
-                event.error && event.error.message
-                  ? event.error.message
-                  : `FFmpeg exited with code ${event.exitCode}.`,
+              message: buildEncoderExitMessage(event),
+              cleanup,
+              cleanupError,
             },
           });
         } catch {

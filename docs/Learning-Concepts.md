@@ -413,6 +413,45 @@ A tail is the most recent part of a longer text.
 
 The backend stores a bounded `stderrTail` for each encoder worker. That means it keeps the newest FFmpeg messages for one stream without letting logs grow forever in memory.
 
+## Encoder Failure
+
+An encoder failure means one FFmpeg worker stopped unexpectedly.
+
+In this repo, each stream has its own FFmpeg worker. If the worker for `stream-alpha` exits with an error, the backend marks only `stream-alpha` as `failed` and stores details like the exit code and `stderrTail`.
+
+The backend does not automatically restart failed encoders in Chapter 1. A user or operator must choose to restart the encoder or stop the stream.
+
+The important idea is isolation:
+
+- `stream-alpha` can fail.
+- `stream-beta` can keep encoding.
+- The frontend can show the failed stream without pretending every stream is broken.
+
+## Cleanup Guard
+
+A cleanup guard is a safety check before deleting generated files.
+
+When an encoder fails, it may leave partial HLS files such as:
+
+```text
+backend/media/live/stream-alpha/master.m3u8
+backend/media/live/stream-alpha/360p/index.m3u8
+```
+
+Before deleting those files, the backend rebuilds the expected directory from the stream ID:
+
+```text
+backend/media/live/<streamId>/
+```
+
+For `stream-alpha`, cleanup is allowed only inside:
+
+```text
+backend/media/live/stream-alpha/
+```
+
+That prevents a bug or bad path from deleting another stream's files.
+
 ## Viewer Session
 
 A viewer session tracks what one viewer is currently watching.

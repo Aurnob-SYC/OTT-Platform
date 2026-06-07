@@ -124,6 +124,31 @@ test("represents stopped and failed streams without changing unrelated records",
   assert.deepEqual(listing.recent.map((stream) => stream.streamId), ["stream-failed"]);
 });
 
+test("manual encoder restart moves a failed stream back to encoding and clears the old error", () => {
+  const config = createTestConfig();
+  const store = createStreamStore(config, { now: createClock() });
+
+  store.createStream({ streamId: "stream-retry" });
+  store.markFailed("stream-retry", {
+    error: {
+      code: "ENCODER_EXITED",
+      message: "FFmpeg exited with code 1.",
+    },
+  });
+
+  const restarted = store.markEncoding("stream-retry", {
+    encoder: {
+      exitCode: null,
+      pid: 5678,
+      stderrTail: "",
+    },
+  });
+
+  assert.equal(restarted.state, STREAM_STATES.ENCODING);
+  assert.equal(restarted.error, null);
+  assert.equal(restarted.encoder.pid, 5678);
+});
+
 test("lists recently active stopped streams with a configurable limit", () => {
   const config = createTestConfig();
   const store = createStreamStore(config, { now: createClock() });

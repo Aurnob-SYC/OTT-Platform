@@ -236,6 +236,7 @@ function createStreamStore(config, options = {}) {
         startedAt: getNow(),
         ...(details.encoder || {}),
       },
+      error: details.error === undefined ? null : details.error,
     });
   }
 

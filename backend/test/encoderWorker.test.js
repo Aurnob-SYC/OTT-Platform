@@ -13,6 +13,7 @@ const {
   HLS_SEGMENT_SECONDS,
   buildEncoderInputUrl,
   buildFfmpegCommand,
+  cleanupStreamOutputDirectory,
   createEncoderWorkerManager,
 } = require("../src/encoderWorker");
 const { createStreamStore } = require("../src/streams");
@@ -111,4 +112,35 @@ test("starts isolated encoder workers and prepares only each stream output direc
   assert.equal(stopped.state, "stopped");
   assert.equal(calls[0].child.killedSignal, "SIGTERM");
   assert.equal(manager.getEncoderStatus("stream-beta").running, true);
+});
+
+test("cleans only the failed stream output directory after validating the target path", () => {
+  const config = createTestConfig();
+  const store = createStreamStore(config);
+
+  store.createStream({ streamId: "stream-alpha" });
+  store.createStream({ streamId: "stream-beta" });
+
+  const alpha = store.getStream("stream-alpha");
+  const beta = store.getStream("stream-beta");
+
+  fs.mkdirSync(path.join(alpha.output.hlsOutputDir, "360p"), { recursive: true });
+  fs.mkdirSync(path.join(beta.output.hlsOutputDir, "360p"), { recursive: true });
+  fs.writeFileSync(path.join(alpha.output.hlsOutputDir, "master.m3u8"), "#EXTM3U\n");
+  fs.writeFileSync(path.join(alpha.output.hlsOutputDir, "360p", "index.m3u8"), "#EXTM3U\n");
+  fs.writeFileSync(path.join(beta.output.hlsOutputDir, "master.m3u8"), "#EXTM3U\n");
+
+  const cleanup = cleanupStreamOutputDirectory(config, "stream-alpha", alpha.output.hlsOutputDir);
+
+  assert.equal(cleanup.attempted, true);
+  assert.deepEqual(cleanup.errors, []);
+  assert.equal(fs.existsSync(alpha.output.hlsOutputDir), true);
+  assert.equal(fs.existsSync(path.join(alpha.output.hlsOutputDir, "master.m3u8")), false);
+  assert.equal(fs.existsSync(path.join(alpha.output.hlsOutputDir, "360p")), false);
+  assert.equal(fs.existsSync(path.join(beta.output.hlsOutputDir, "master.m3u8")), true);
+
+  assert.throws(
+    () => cleanupStreamOutputDirectory(config, "stream-alpha", beta.output.hlsOutputDir),
+    /Cleanup output directory must match stream stream-alpha's HLS directory/,
+  );
 });

@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
+const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
@@ -93,7 +95,7 @@ function createTestConfig() {
       HLS_MEDIA_ROOT: "media/live",
     },
     {
-      backendRoot: path.join(os.tmpdir(), "ott-stream-api-test"),
+      backendRoot: fs.mkdtempSync(path.join(os.tmpdir(), "ott-stream-api-test-")),
     },
   );
 }
@@ -132,6 +134,27 @@ function createFakeEncoderManager() {
         stoppedAt: "2026-01-01T00:00:01.000Z",
       };
     },
+  };
+}
+
+function createFakeSpawn(calls) {
+  return (command, args, options) => {
+    const child = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.pid = 7000 + calls.length;
+    child.kill = (signal) => {
+      child.killedSignal = signal;
+      return true;
+    };
+
+    calls.push({
+      args,
+      child,
+      command,
+      options,
+    });
+
+    return child;
   };
 }
 
@@ -269,6 +292,93 @@ test("returns useful JSON errors for invalid stream IDs and missing streams", as
     );
     assert.equal(missing.statusCode, 404);
     assert.equal(missing.body.error, "STREAM_NOT_FOUND");
+  } finally {
+    await close(server);
+  }
+});
+
+test("marks only the crashed encoder stream failed and cleans only its HLS output", async () => {
+  const config = createTestConfig();
+  const calls = [];
+  const ids = ["stream-alpha", "stream-beta"];
+  const server = createServer(config, {
+    streamApiOptions: {
+      encoderManagerOptions: {
+        spawn: createFakeSpawn(calls),
+        now: (() => {
+          let tick = 0;
+          return () => {
+            tick += 1;
+            return new Date(Date.UTC(2026, 0, 1, 0, 0, tick)).toISOString();
+          };
+        })(),
+      },
+      streamStoreOptions: {
+        idGenerator: () => ids.shift(),
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    const createdAlpha = await requestJson(address.port, "POST", "/api/streams", {
+      title: "Alpha",
+    });
+    const createdBeta = await requestJson(address.port, "POST", "/api/streams", {
+      title: "Beta",
+    });
+
+    await requestJson(address.port, "POST", "/api/streams/stream-alpha/publish/start", {});
+    await requestJson(address.port, "POST", "/api/streams/stream-beta/publish/start", {});
+    await requestJson(address.port, "POST", "/api/streams/stream-alpha/encoder/start", {});
+    await requestJson(address.port, "POST", "/api/streams/stream-beta/encoder/start", {});
+
+    assert.equal(calls.length, 2);
+    assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-alpha", "master.m3u8")), true);
+    assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-beta", "master.m3u8")), true);
+
+    calls[0].child.stderr.emit("data", Buffer.from("ffmpeg could not read input"));
+    calls[0].child.emit("close", 1, null);
+
+    const alphaStatus = await requestJson(
+      address.port,
+      "GET",
+      "/api/streams/stream-alpha/status",
+    );
+    const betaStatus = await requestJson(
+      address.port,
+      "GET",
+      "/api/streams/stream-beta/status",
+    );
+
+    assert.equal(createdAlpha.body.streamId, "stream-alpha");
+    assert.equal(createdBeta.body.streamId, "stream-beta");
+    assert.equal(alphaStatus.body.state, "failed");
+    assert.equal(alphaStatus.body.encoder.exitCode, 1);
+    assert.equal(alphaStatus.body.encoder.stderrTail, "ffmpeg could not read input");
+    assert.equal(alphaStatus.body.error.code, "ENCODER_EXITED");
+    assert.equal(alphaStatus.body.error.cleanup.attempted, true);
+    assert.equal(betaStatus.body.state, "encoding");
+    assert.equal(betaStatus.body.encoder.pid, 7001);
+    assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-alpha", "master.m3u8")), false);
+    assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-beta", "master.m3u8")), true);
+    assert.equal(calls.length, 2);
+
+    const restartedAlpha = await requestJson(
+      address.port,
+      "POST",
+      "/api/streams/stream-alpha/encoder/start",
+      {
+        renditions: ["360p"],
+      },
+    );
+
+    assert.equal(restartedAlpha.statusCode, 200);
+    assert.equal(restartedAlpha.body.stream.state, "encoding");
+    assert.equal(restartedAlpha.body.stream.error, null);
+    assert.equal(restartedAlpha.body.pid, 7002);
+    assert.equal(calls.length, 3);
+    assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-alpha", "master.m3u8")), true);
   } finally {
     await close(server);
   }

@@ -4,7 +4,7 @@ const { spawn: defaultSpawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { buildMediaMtxPath } = require("./urlBuilders");
+const { buildMediaMtxPath, buildStreamHlsOutputDir } = require("./urlBuilders");
 
 const MAX_STDERR_TAIL_LENGTH = 8 * 1024;
 const HLS_SEGMENT_SECONDS = 2;
@@ -93,6 +93,67 @@ function writeMasterPlaylist(outputDir, renditions) {
   }
 
   fs.writeFileSync(path.join(outputDir, "master.m3u8"), `${lines.join("\n")}\n`);
+}
+
+function normalizePathForComparison(value) {
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function isPathInside(parentDir, candidatePath) {
+  const relative = path.relative(parentDir, candidatePath);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function resolveValidatedCleanupDir(config, streamId, outputDir) {
+  const expectedOutputDir = path.resolve(buildStreamHlsOutputDir(config, streamId));
+  const actualOutputDir = path.resolve(outputDir);
+
+  if (
+    normalizePathForComparison(actualOutputDir) !== normalizePathForComparison(expectedOutputDir)
+  ) {
+    throw new Error(`Cleanup output directory must match stream ${streamId}'s HLS directory.`);
+  }
+
+  return expectedOutputDir;
+}
+
+function cleanupStreamOutputDirectory(config, streamId, outputDir) {
+  const cleanupDir = resolveValidatedCleanupDir(config, streamId, outputDir);
+  const result = {
+    attempted: true,
+    outputDir: cleanupDir,
+    deletedEntries: [],
+    errors: [],
+  };
+
+  if (!fs.existsSync(cleanupDir)) {
+    return result;
+  }
+
+  for (const entry of fs.readdirSync(cleanupDir, { withFileTypes: true })) {
+    const entryPath = path.resolve(cleanupDir, entry.name);
+
+    if (!isPathInside(cleanupDir, entryPath)) {
+      result.errors.push({
+        path: entryPath,
+        message: "Refusing to delete a path outside the stream output directory.",
+      });
+      continue;
+    }
+
+    try {
+      fs.rmSync(entryPath, { force: true, recursive: true });
+      result.deletedEntries.push(entry.name);
+    } catch (error) {
+      result.errors.push({
+        path: entryPath,
+        message: error.message,
+      });
+    }
+  }
+
+  return result;
 }
 
 function buildScaleFilter(renditions) {
@@ -365,6 +426,7 @@ module.exports = {
   appendToTail,
   buildEncoderInputUrl,
   buildFfmpegCommand,
+  cleanupStreamOutputDirectory,
   createEncoderWorkerManager,
   ensureStreamOutputDirectories,
   writeMasterPlaylist,

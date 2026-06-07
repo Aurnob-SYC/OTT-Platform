@@ -208,6 +208,8 @@ Dependencies:
 
 Goal: Reflect encoder failures accurately and prevent one stream's failure from leaking into another stream.
 
+Companion doc: `docs/Chapter-1-Encoder-Failure-Cleanup.md`.
+
 Scope:
 
 - Monitor child process `exit` or `close` events.
