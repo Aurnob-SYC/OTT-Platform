@@ -8,7 +8,7 @@ OTT-Platform is a multi-chapter streaming platform built from scratch. The curre
 
 Pipeline:
 
-`Source -> FFmpeg encode/package (H.264/AAC) -> HLS files -> nginx cache -> Player`
+`Browser camera -> WebRTC -> MediaMTX relay -> FFmpeg encode/package (H.264/AAC) -> HLS files -> nginx cache -> Player`
 
 ## Current State
 
@@ -52,8 +52,9 @@ npm test
 
 ## Chapter 1 Design Notes
 
-- Browser publishers capture camera media and publish over WebRTC.
+- Browser publishers capture camera media and publish over WebRTC directly to MediaMTX.
 - MediaMTX is the live relay between browser publishers and encoder workers.
+- The built-in browser publish page uses `/<path>/publish`, while custom ingest clients can use `/<path>/whip`.
 - FFmpeg reads from the relay and writes multi-resolution HLS output.
 - HLS output should be written under `backend/media/live/<streamId>/`.
 - nginx should expose playback at `/hls/<streamId>/master.m3u8`.

@@ -33,7 +33,7 @@ function createApp(config) {
   app.use((request, response) => {
     response.status(404).json({
       error: "Not found",
-      message: "Chapter 1 Part 1 exposes runtime configuration only. Stream APIs come in later parts.",
+      message: "Chapter 1 stream APIs are not exposed yet. They are scheduled for Part 4.",
     });
   });
 

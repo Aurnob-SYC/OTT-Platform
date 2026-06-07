@@ -78,6 +78,8 @@ Dependencies:
 
 Goal: Represent multiple streams independently in backend state.
 
+Companion doc: `docs/Chapter-1-Backend-Stream-Metadata-Model.md`.
+
 Scope:
 
 - Store streams by `streamId`, not in a global singleton.

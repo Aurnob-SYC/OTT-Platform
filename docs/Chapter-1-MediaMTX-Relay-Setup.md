@@ -65,7 +65,7 @@ Before backend automation, verify one path manually:
 MediaMTX also exposes a WHIP ingest endpoint for custom publisher code:
 
 ```text
-https://<server-lan-ip>:8889/live/stream-manual/whip
+https://192.168.0.102:8889/live/stream-manual/whip
 ```
 
 The MediaMTX docs confirm the built-in WebRTC browser publisher uses `/<path>/publish`, WHIP publishing uses `/<path>/whip`, and the Control API can list paths at `/v3/paths/list`.
