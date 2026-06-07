@@ -61,6 +61,17 @@ Install these on the host machine or set the matching environment variable to an
 
 Part 1 records these binary names for later orchestration. Later parts will add reachability and process checks.
 
+## MediaMTX Relay
+
+Use `docs/Chapter-1-MediaMTX-Relay-Setup.md` for the Chapter 1 MediaMTX configuration and manual publish check.
+
+The expected LAN publish targets are:
+
+- Browser publish page: `https://<server-lan-ip>:8889/live/<streamId>/publish`
+- WHIP endpoint: `https://<server-lan-ip>:8889/live/<streamId>/whip`
+
+The backend treats `live/<streamId>` as the relay boundary and can reference the local MediaMTX Control API at `/v3/paths/list` when relay observation is needed.
+
 ## Startup Order
 
 1. Start MediaMTX with WebRTC publishing enabled on the LAN.

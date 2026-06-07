@@ -5,6 +5,7 @@ const express = require("express");
 
 const { createRuntimeConfig } = require("./config");
 const { loadEnvFile } = require("./env");
+const { buildMediaMtxRelayDescriptor } = require("./mediaMtx");
 const { getRuntimeSummary, validateRuntime } = require("./runtime");
 const { buildStreamUrls } = require("./urlBuilders");
 
@@ -25,6 +26,7 @@ function createApp(config) {
       ok: true,
       runtime: getRuntimeSummary(config),
       sampleStream: buildStreamUrls(config, "stream-sample"),
+      sampleRelay: buildMediaMtxRelayDescriptor(config, "stream-sample"),
     });
   });
 

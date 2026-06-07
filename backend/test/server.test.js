@@ -87,6 +87,8 @@ test("serves runtime status through the Express API", async () => {
     assert.equal(response.body.ok, true);
     assert.equal(response.body.runtime.urls.backendApi, "http://127.0.0.1:4000");
     assert.equal(response.body.sampleStream.playbackUrl, "http://127.0.0.1/hls/stream-sample/master.m3u8");
+    assert.equal(response.body.sampleRelay.mediaMtxPath, "live/stream-sample");
+    assert.equal(response.body.sampleRelay.whipUrl, "http://127.0.0.1:8889/live/stream-sample/whip");
   } finally {
     await close(server);
   }

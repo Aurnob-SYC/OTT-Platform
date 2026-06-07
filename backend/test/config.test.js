@@ -8,6 +8,11 @@ const test = require("node:test");
 
 const { createRuntimeConfig } = require("../src/config");
 const { parseEnvFile } = require("../src/env");
+const {
+  buildMediaMtxPathDetailsUrl,
+  buildMediaMtxPathsListUrl,
+  buildMediaMtxRelayDescriptor,
+} = require("../src/mediaMtx");
 const { validateRuntime } = require("../src/runtime");
 const {
   buildMediaMtxPath,
@@ -55,6 +60,25 @@ test("keeps per-stream HLS output inside the configured media root", () => {
 
   assert.match(buildStreamHlsOutputDir(config, "stream_ok-1"), /stream_ok-1$/);
   assert.throws(() => buildStreamHlsOutputDir(config, "../escape"), /streamId must be/);
+});
+
+test("builds MediaMTX relay URLs and status API references for one path", () => {
+  const config = createRuntimeConfig({
+    LAN_HOST: "192.168.1.25",
+    MEDIAMTX_API_BASE_URL: "http://192.168.1.25:9997/",
+  });
+
+  const relay = buildMediaMtxRelayDescriptor(config, "stream-abc");
+
+  assert.equal(relay.mediaMtxPath, "live/stream-abc");
+  assert.equal(relay.publishUrl, "http://192.168.1.25:8889/live/stream-abc/publish");
+  assert.equal(relay.whipUrl, "http://192.168.1.25:8889/live/stream-abc/whip");
+  assert.equal(relay.status.model, "backend-lifecycle-with-optional-mediamtx-api");
+  assert.equal(buildMediaMtxPathsListUrl(config), "http://192.168.1.25:9997/v3/paths/list");
+  assert.equal(
+    buildMediaMtxPathDetailsUrl(config, "stream-abc"),
+    "http://192.168.1.25:9997/v3/paths/get/live%2Fstream-abc",
+  );
 });
 
 test("runtime validation creates the HLS media root and can clean stale output when enabled", () => {
