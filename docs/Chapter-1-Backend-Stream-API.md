@@ -64,6 +64,7 @@ This keeps API routing separate from the stream metadata model. Part 6 connects 
 | `POST` | `/api/streams/:streamId/stop` | Stop one stream record, stop its encoder worker, and clear viewer sessions watching it. |
 | `GET` | `/api/streams` | List active and recently active streams. |
 | `GET` | `/api/streams/:streamId/status` | Return one stream status object. |
+| `GET` | `/api/operator/status` | Return a local operator snapshot of active streams and encoder workers. |
 | `POST` | `/api/viewer/session` | Start or replace one viewer's active stream. |
 | `GET` | `/api/viewer/session?viewerId=<viewerId>` | Report one viewer's active stream. |
 | `DELETE` | `/api/viewer/session` | Clear one viewer's active stream. |
@@ -268,6 +269,34 @@ Response:
 ```
 
 The status endpoint returns the same structured object as the stream store.
+
+## Operator Status
+
+Request:
+
+```http
+GET /api/operator/status
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "operator": {
+    "counts": {
+      "activeStreams": 1,
+      "recentStreams": 0,
+      "encoderWorkers": 1
+    },
+    "activeStreams": [],
+    "recentStreams": [],
+    "encoderWorkers": []
+  }
+}
+```
+
+This endpoint is for local Chapter 1 debugging. It summarizes stream IDs, MediaMTX paths, HLS output directories, playback URLs, readiness, encoder PIDs, and recent errors without serving HLS files.
 
 ## Viewer Sessions
 

@@ -73,6 +73,7 @@ function createInitialEncoderStatus() {
     outputDir: null,
     renditions: [],
     commandLine: null,
+    running: false,
   };
 }
 

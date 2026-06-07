@@ -11,6 +11,8 @@ const { createRuntimeConfig } = require("../src/config");
 const {
   HLS_PLAYLIST_SIZE,
   HLS_SEGMENT_SECONDS,
+  MAX_STDERR_TAIL_LENGTH,
+  appendToTail,
   buildEncoderInputUrl,
   buildFfmpegCommand,
   cleanupStreamOutputDirectory,
@@ -112,6 +114,15 @@ test("starts isolated encoder workers and prepares only each stream output direc
   assert.equal(stopped.state, "stopped");
   assert.equal(calls[0].child.killedSignal, "SIGTERM");
   assert.equal(manager.getEncoderStatus("stream-beta").running, true);
+});
+
+test("keeps encoder stderr tails bounded to the newest output", () => {
+  const longChunk = "x".repeat(MAX_STDERR_TAIL_LENGTH + 20);
+  const tail = appendToTail("old output", longChunk);
+
+  assert.equal(tail.length, MAX_STDERR_TAIL_LENGTH);
+  assert.equal(tail, longChunk.slice(20));
+  assert.equal(tail.includes("old output"), false);
 });
 
 test("cleans only the failed stream output directory after validating the target path", () => {

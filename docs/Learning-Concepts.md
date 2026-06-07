@@ -496,6 +496,42 @@ A tail is the most recent part of a longer text.
 
 The backend stores a bounded `stderrTail` for each encoder worker. That means it keeps the newest FFmpeg messages for one stream without letting logs grow forever in memory.
 
+## Observability
+
+Observability means making a system easy to inspect while it is running.
+
+In this project, observability means you can follow one stream through the live path by using its `streamId`.
+
+For example, a lifecycle log for `stream-alpha` can show:
+
+- the MediaMTX path: `live/stream-alpha`
+- the FFmpeg PID
+- the HLS output folder
+- the nginx playback URL
+- the latest error if that stream failed
+
+This matters because several streams can run at the same time. If `stream-alpha` fails, the logs and status should explain `stream-alpha` without making `stream-beta` look broken.
+
+## Operator Status
+
+Operator status is a small backend report for the person running the local system.
+
+In this repo, the route is:
+
+```text
+GET /api/operator/status
+```
+
+It returns active streams, recent stopped or failed streams, and currently running encoder workers. It is not a viewer playback route and it does not serve video files.
+
+The goal is quick local debugging. For example, an operator can check whether `stream-alpha` has:
+
+- a MediaMTX path
+- an encoder PID
+- a ready HLS output
+- a playback URL
+- a recent error message
+
 ## Encoder Failure
 
 An encoder failure means one FFmpeg worker stopped unexpectedly.

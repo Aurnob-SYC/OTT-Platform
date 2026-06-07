@@ -8,6 +8,11 @@ const {
   createEncoderWorkerManager,
 } = require("./encoderWorker");
 const { inspectHlsReadiness } = require("./hlsReadiness");
+const {
+  buildOperatorSnapshot,
+  createJsonLogger,
+  logStreamLifecycle,
+} = require("./observability");
 const { STREAM_STATES, createStreamStore } = require("./streams");
 const { assertStreamId } = require("./urlBuilders");
 const {
@@ -162,6 +167,12 @@ function createStreamApi(config, options = {}) {
   const streamStore = options.streamStore || createStreamStore(config, options.streamStoreOptions);
   const viewerSessionStore =
     options.viewerSessionStore || createViewerSessionStore(options.viewerSessionOptions);
+  const logger =
+    options.logger === undefined
+      ? createJsonLogger()
+      : typeof options.logger === "function"
+        ? options.logger
+        : () => {};
   const encoderManager =
     options.encoderManager ||
     createEncoderWorkerManager(config, {
@@ -171,13 +182,17 @@ function createStreamApi(config, options = {}) {
           const current = streamStore.getStream(event.streamId);
 
           if (event.expectedStop || current.state === STREAM_STATES.STOPPED) {
-            streamStore.markStopped(event.streamId, {
+            const stopped = streamStore.markStopped(event.streamId, {
               encoder: {
                 exitCode: event.exitCode,
                 exitSignal: event.exitSignal,
+                running: false,
                 stderrTail: event.stderrTail,
                 stoppedAt: event.stoppedAt,
               },
+            });
+            logStreamLifecycle(logger, "encoder_stopped", stopped, {
+              expectedStop: event.expectedStop,
             });
             return;
           }
@@ -197,10 +212,11 @@ function createStreamApi(config, options = {}) {
             };
           }
 
-          streamStore.markFailed(event.streamId, {
+          const failed = streamStore.markFailed(event.streamId, {
             encoder: {
               exitCode: event.exitCode,
               exitSignal: event.exitSignal,
+              running: false,
               stderrTail: event.stderrTail,
               stoppedAt: event.stoppedAt,
             },
@@ -210,6 +226,9 @@ function createStreamApi(config, options = {}) {
               cleanup,
               cleanupError,
             },
+          });
+          logStreamLifecycle(logger, "encoder_failed", failed, {
+            expectedStop: event.expectedStop,
           });
         } catch {
           // If the stream has already disappeared in a future implementation, there is
@@ -227,9 +246,13 @@ function createStreamApi(config, options = {}) {
     const readiness = inspectHlsReadiness(status);
 
     if (status.state === STREAM_STATES.ENCODING && readiness.ready) {
-      return streamStore.markLive(status.streamId, {
+      const stream = streamStore.markLive(status.streamId, {
         outputReadiness: readiness,
       });
+      logStreamLifecycle(logger, "hls_ready", stream, {
+        missing: readiness.missing,
+      });
+      return stream;
     }
 
     return streamStore.updateOutputReadiness(status.streamId, readiness);
@@ -253,6 +276,7 @@ function createStreamApi(config, options = {}) {
         title: readOptionalString(request.body, "title"),
         publisherUserId: readOptionalString(request.body, "publisherUserId"),
       });
+      logStreamLifecycle(logger, "stream_created", stream);
 
       response.status(201).json({
         streamId: stream.streamId,
@@ -298,6 +322,7 @@ function createStreamApi(config, options = {}) {
       const stream = streamStore.markPublishing(request.params.streamId, {
         publisherUserId: readOptionalString(request.body, "userId"),
       });
+      logStreamLifecycle(logger, "publish_started", stream);
 
       response.status(200).json({
         success: true,
@@ -331,9 +356,13 @@ function createStreamApi(config, options = {}) {
           outputDir: startStatus.outputDir,
           pid: startStatus.pid,
           renditions: startStatus.renditions || renditions,
+          running: startStatus.running === true,
           startedAt: startStatus.startedAt,
           stderrTail: startStatus.stderrTail,
         },
+      });
+      logStreamLifecycle(logger, "encoder_started", stream, {
+        renditions,
       });
       const refreshedStream = refreshHlsReadiness(stream);
 
@@ -358,16 +387,32 @@ function createStreamApi(config, options = {}) {
         encoder: {
           exitCode: stopStatus.exitCode,
           exitSignal: stopStatus.exitSignal,
+          running: false,
           stderrTail: stopStatus.stderrTail,
           stoppedAt: stopStatus.stoppedAt,
         },
       });
       const clearedViewerSessions = viewerSessionStore.clearStreamSessions(request.params.streamId);
+      logStreamLifecycle(logger, "stream_stopped", stream, {
+        clearedViewerSessions,
+      });
 
       response.status(200).json({
         success: true,
         clearedViewerSessions,
         stream,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/operator/status", (request, response, next) => {
+    try {
+      refreshActiveStreamReadiness();
+      response.status(200).json({
+        ok: true,
+        operator: buildOperatorSnapshot(streamStore, encoderManager),
       });
     } catch (error) {
       next(error);

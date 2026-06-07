@@ -305,6 +305,10 @@ function createEncoderWorkerManager(config, options = {}) {
     return worker ? toStatus(worker) : null;
   }
 
+  function listEncoderWorkers() {
+    return Array.from(workers.values()).map(toStatus);
+  }
+
   function startEncoder(stream, optionsForStart = {}) {
     const existing = getEncoderStatus(stream.streamId);
     if (existing && existing.running) {
@@ -412,6 +416,7 @@ function createEncoderWorkerManager(config, options = {}) {
 
   return {
     getEncoderStatus,
+    listEncoderWorkers,
     startEncoder,
     stopAllEncoders,
     stopEncoder,

@@ -366,6 +366,8 @@ Dependencies:
 
 Goal: Make the live path traceable from publisher to player.
 
+Companion doc: `docs/Chapter-1-Observability-Operator-Feedback.md`.
+
 Scope:
 
 - Backend logs stream creation, publish start, encoder start, readiness, stop, and failure.

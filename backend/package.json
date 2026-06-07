@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/config.js && node --check src/encoderWorker.js && node --check src/env.js && node --check src/hlsReadiness.js && node --check src/mediaMtx.js && node --check src/runtime.js && node --check src/streamApi.js && node --check src/streams.js && node --check src/urlBuilders.js && node --check src/viewerSessions.js"
+    "check": "node --check src/index.js && node --check src/config.js && node --check src/encoderWorker.js && node --check src/env.js && node --check src/hlsReadiness.js && node --check src/mediaMtx.js && node --check src/observability.js && node --check src/runtime.js && node --check src/streamApi.js && node --check src/streams.js && node --check src/urlBuilders.js && node --check src/viewerSessions.js"
   },
   "keywords": [],
   "author": "",

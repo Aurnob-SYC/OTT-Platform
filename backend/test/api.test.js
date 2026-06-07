@@ -107,6 +107,9 @@ function createFakeEncoderManager() {
     getEncoderStatus(streamId) {
       return started.get(streamId) || null;
     },
+    listEncoderWorkers() {
+      return Array.from(started.values());
+    },
     startEncoder(stream, options) {
       const status = {
         commandLine: `ffmpeg -i rtsp://127.0.0.1:8554/live/${stream.streamId}`,
@@ -171,9 +174,11 @@ function writeReadyHlsOutput(stream, renditions = ["360p", "480p", "720p"]) {
 
 test("exposes stream creation, publishing, encoder metadata, status, listing, and stop APIs", async () => {
   const config = createTestConfig();
+  const lifecycleLogs = [];
   const server = createServer(config, {
     streamApiOptions: {
       encoderManager: createFakeEncoderManager(),
+      logger: (entry) => lifecycleLogs.push(entry),
       streamStoreOptions: {
         idGenerator: () => "stream-alpha",
       },
@@ -190,6 +195,8 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     assert.equal(created.body.streamId, "stream-alpha");
     assert.equal(created.body.publishPath, "live/stream-alpha");
     assert.equal(created.body.stream.state, "created");
+    assert.equal(lifecycleLogs.at(-1).event, "stream_created");
+    assert.equal(lifecycleLogs.at(-1).stream.streamId, "stream-alpha");
 
     const prematureEncoder = await requestJson(
       address.port,
@@ -218,6 +225,8 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     );
     assert.equal(publishing.body.whipUrl, "http://192.168.1.25:8889/live/stream-alpha/whip");
     assert.equal(publishing.body.stream.publisher.userId, "user-123");
+    assert.equal(lifecycleLogs.at(-1).event, "publish_started");
+    assert.equal(lifecycleLogs.at(-1).stream.mediaMtxPath, "live/stream-alpha");
 
     const encoding = await requestJson(
       address.port,
@@ -235,12 +244,32 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     assert.equal(encoding.body.stream.state, "encoding");
     assert.equal(encoding.body.stream.encoder.inputUrl, "rtsp://127.0.0.1:8554/live/stream-alpha");
     assert.equal(encoding.body.stream.encoder.commandLine.includes("ffmpeg"), true);
+    assert.equal(encoding.body.stream.encoder.running, true);
     assert.equal(encoding.body.stream.output.readiness.ready, false);
     assert.deepEqual(encoding.body.stream.output.readiness.missing, [
       "master.m3u8",
       "360p/index.m3u8",
       "480p/index.m3u8",
     ]);
+    assert.equal(lifecycleLogs.at(-1).event, "encoder_started");
+    assert.equal(lifecycleLogs.at(-1).stream.encoder.pid, 4321);
+
+    const operatorWhileEncoding = await requestJson(
+      address.port,
+      "GET",
+      "/api/operator/status",
+    );
+
+    assert.equal(operatorWhileEncoding.statusCode, 200);
+    assert.equal(operatorWhileEncoding.body.ok, true);
+    assert.equal(operatorWhileEncoding.body.operator.counts.activeStreams, 1);
+    assert.equal(operatorWhileEncoding.body.operator.counts.encoderWorkers, 1);
+    assert.equal(
+      operatorWhileEncoding.body.operator.activeStreams[0].mediaMtxPath,
+      "live/stream-alpha",
+    );
+    assert.equal(operatorWhileEncoding.body.operator.activeStreams[0].encoder.pid, 4321);
+    assert.equal(operatorWhileEncoding.body.operator.encoderWorkers[0].pid, 4321);
 
     const prematureViewer = await requestJson(address.port, "POST", "/api/viewer/session", {
       viewerId: "viewer-warming",
@@ -273,6 +302,8 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     assert.equal(readyStatus.body.state, "live");
     assert.equal(readyStatus.body.output.readiness.ready, true);
     assert.deepEqual(readyStatus.body.output.readiness.missing, []);
+    assert.equal(lifecycleLogs.at(-1).event, "hls_ready");
+    assert.equal(lifecycleLogs.at(-1).stream.outputReady, true);
 
     const listActive = await requestJson(address.port, "GET", "/api/streams");
 
@@ -293,6 +324,9 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     assert.equal(stopped.body.success, true);
     assert.equal(stopped.body.stream.state, "stopped");
     assert.equal(stopped.body.stream.encoder.exitSignal, "SIGTERM");
+    assert.equal(stopped.body.stream.encoder.running, false);
+    assert.equal(lifecycleLogs.at(-1).event, "stream_stopped");
+    assert.equal(lifecycleLogs.at(-1).stream.streamId, "stream-alpha");
 
     const listRecent = await requestJson(address.port, "GET", "/api/streams");
 
@@ -340,9 +374,11 @@ test("returns useful JSON errors for invalid stream IDs and missing streams", as
 test("marks only the crashed encoder stream failed and cleans only its HLS output", async () => {
   const config = createTestConfig();
   const calls = [];
+  const lifecycleLogs = [];
   const ids = ["stream-alpha", "stream-beta"];
   const server = createServer(config, {
     streamApiOptions: {
+      logger: (entry) => lifecycleLogs.push(entry),
       encoderManagerOptions: {
         spawn: createFakeSpawn(calls),
         now: (() => {
@@ -403,6 +439,9 @@ test("marks only the crashed encoder stream failed and cleans only its HLS outpu
     assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-alpha", "master.m3u8")), false);
     assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-beta", "master.m3u8")), true);
     assert.equal(calls.length, 2);
+    assert.equal(lifecycleLogs.at(-1).event, "encoder_failed");
+    assert.equal(lifecycleLogs.at(-1).stream.streamId, "stream-alpha");
+    assert.equal(lifecycleLogs.at(-1).stream.error.code, "ENCODER_EXITED");
 
     const restartedAlpha = await requestJson(
       address.port,
@@ -447,6 +486,7 @@ test("starts, replaces, and clears one active stream per viewer session", async 
 
   const server = createServer(config, {
     streamApiOptions: {
+      logger: () => {},
       streamStore,
     },
   });
