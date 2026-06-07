@@ -79,3 +79,20 @@ The backend treats `live/<streamId>` as the relay boundary and can reference the
 3. Start the backend with `npm start` from `backend/`.
 4. Start the frontend with `npm run dev` from `frontend/`.
 5. Open `GET /api/runtime/status` on the backend to confirm URL construction and the absolute HLS root.
+
+## Frontend Publisher Flow
+
+The React publisher UI calls backend APIs through `/api`. During Vite development, `frontend/vite.config.ts` proxies `/api` to:
+
+```text
+http://127.0.0.1:4000
+```
+
+Override the proxy target when the backend runs elsewhere:
+
+```powershell
+$env:VITE_BACKEND_PROXY_TARGET="http://<server-lan-ip>:4000"
+npm run dev
+```
+
+For built frontend hosting behind nginx, keep HLS under `/hls/` and add a separate `/api/` proxy to the backend. Do not serve HLS manifests or segments through the backend.

@@ -142,6 +142,8 @@ Dependencies:
 
 Goal: Let a publisher create a stream, capture local media, and publish it to MediaMTX over WebRTC.
 
+Companion doc: `docs/Chapter-1-Publisher-Browser-Flow.md`.
+
 Scope:
 
 - Browser owns camera and microphone capture.

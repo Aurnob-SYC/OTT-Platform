@@ -2,7 +2,22 @@ export type PipelineStage = 'publish' | 'encode' | 'serve' | 'watch'
 
 export type PipelineStatus = 'done' | 'active' | 'idle'
 
-export type StreamStatus = 'live' | 'encoding' | 'failed' | 'offline'
+export type StreamStatus =
+  | 'created'
+  | 'publishing'
+  | 'encoding'
+  | 'live'
+  | 'stopped'
+  | 'failed'
+  | 'offline'
+
+export type PublisherState =
+  | 'idle'
+  | 'requesting-permissions'
+  | 'connecting'
+  | 'live'
+  | 'stopped'
+  | 'failed'
 
 export interface PipelineStep {
   actor: string
@@ -33,4 +48,43 @@ export interface WatchSession {
   playbackState: 'loading' | 'ready' | 'playing'
   playbackUrl: string
   streamId: string
+}
+
+export type BackendStreamState = 'created' | 'publishing' | 'encoding' | 'live' | 'stopped' | 'failed'
+
+export interface BackendStreamStatus {
+  encoder: {
+    orchestration?: string
+    pid: number | null
+    renditions?: string[]
+    state: string
+  }
+  error: {
+    code?: string
+    message: string
+  } | null
+  output: {
+    hlsOutputDir: string
+    playbackUrl: string
+  }
+  publisher: {
+    userId: string | null
+  }
+  relay: {
+    mediaMtxPath: string
+    publishUrl: string
+    whipUrl: string
+  }
+  state: BackendStreamState
+  streamId: string
+  timestamps: {
+    createdAt: string
+    encodingStartedAt: string | null
+    failedAt: string | null
+    liveAt: string | null
+    publishingStartedAt: string | null
+    stoppedAt: string | null
+    updatedAt: string
+  }
+  title: string
 }

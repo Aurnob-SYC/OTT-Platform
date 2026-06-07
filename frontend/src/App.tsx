@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { Header } from './components/Header'
 import { PipelinePanel } from './components/PipelinePanel'
+import { PublisherPanel } from './components/PublisherPanel'
 import { SessionPanel } from './components/SessionPanel'
 import { StreamsPanel } from './components/StreamsPanel'
 import { INITIAL_STREAMS } from './data/streams'
-import type { LiveStream, PipelineStage, WatchSession } from './types'
+import type { BackendStreamStatus, LiveStream, PipelineStage, WatchSession } from './types'
 
 const VIEWER_ID = 'viewer-1'
 
@@ -70,6 +71,51 @@ function App() {
     setSession(undefined)
   }
 
+  function mapBackendStreamToLiveStream(stream: BackendStreamStatus): LiveStream {
+    const startedAt = Date.parse(
+      stream.timestamps.liveAt ||
+        stream.timestamps.encodingStartedAt ||
+        stream.timestamps.publishingStartedAt ||
+        stream.timestamps.createdAt,
+    )
+
+    return {
+      bitrate: stream.encoder.renditions?.join(', ') || '-',
+      creator: stream.publisher.userId || 'unknown',
+      encoderPid: stream.encoder.pid ?? undefined,
+      hlsOutput: stream.output.hlsOutputDir,
+      id: stream.streamId,
+      mediaMtxPath: stream.relay.mediaMtxPath,
+      resolution: stream.encoder.renditions?.at(-1) || 'pending',
+      startedAt: Number.isNaN(startedAt) ? Date.now() : startedAt,
+      status: stream.state,
+      title: stream.title,
+      viewers: 0,
+    }
+  }
+
+  function upsertBackendStream(stream: BackendStreamStatus): void {
+    const nextStream = mapBackendStreamToLiveStream(stream)
+
+    setStreams((currentStreams) => {
+      const existingIndex = currentStreams.findIndex(
+        (currentStream) => currentStream.id === nextStream.id,
+      )
+
+      if (existingIndex === -1) {
+        return [nextStream, ...currentStreams]
+      }
+
+      const updatedStreams = [...currentStreams]
+      updatedStreams[existingIndex] = {
+        ...nextStream,
+        viewers: currentStreams[existingIndex].viewers,
+      }
+
+      return updatedStreams
+    })
+  }
+
   return (
     <>
       <Header liveCount={liveCount} totalCount={streams.length} viewerCount={viewerCount} />
@@ -78,6 +124,7 @@ function App() {
         <PipelinePanel activeStage={activeStage} isPlaying={session?.playbackState === 'playing'} />
 
         <div className="side-stack">
+          <PublisherPanel onStreamChanged={upsertBackendStream} />
           <StreamsPanel
             activeStreamId={session?.streamId}
             onSelectStream={startWatchSession}

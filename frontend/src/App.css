@@ -311,6 +311,16 @@
   color: var(--danger);
 }
 
+.stream-status-tag.created {
+  background: color-mix(in oklch, var(--watch) 12%, transparent);
+  color: var(--watch);
+}
+
+.stream-status-tag.publishing {
+  background: color-mix(in oklch, var(--publish) 14%, transparent);
+  color: var(--publish);
+}
+
 .stream-status-tag.encoding {
   background: color-mix(in oklch, var(--encode) 14%, transparent);
   color: var(--encode);
@@ -322,6 +332,11 @@
 }
 
 .stream-status-tag.offline {
+  background: color-mix(in oklch, var(--muted) 10%, transparent);
+  color: var(--muted);
+}
+
+.stream-status-tag.stopped {
   background: color-mix(in oklch, var(--muted) 10%, transparent);
   color: var(--muted);
 }
@@ -360,6 +375,95 @@
 .stream-meta-row strong {
   color: var(--fg);
   font-weight: 600;
+}
+
+.publisher-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.publisher-preview {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  min-height: 220px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.publisher-preview video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: black;
+}
+
+.publisher-form {
+  display: grid;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--fg);
+  padding: 8px 10px;
+}
+
+.field input:disabled,
+.field select:disabled,
+.toggle-row input:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  color: var(--fg);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.toggle-row input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+}
+
+.publisher-summary {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.error-banner {
+  margin: 0;
+  border: 1px solid color-mix(in oklch, var(--danger) 50%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--danger) 12%, transparent);
+  color: var(--fg);
+  font-size: 0.86rem;
+  padding: 10px 12px;
 }
 
 .session-card {
