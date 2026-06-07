@@ -172,6 +172,7 @@ The backend exposes the following endpoints for the frontend and CLI:
 | `GET` | `/api/streams` | none | `{ "streams": [...] }` | List active and recently active streams |
 | `GET` | `/api/streams/:streamId/status` | none | `{ "streamId": "stream-abc", "state": "live", "renditions": [...], "output": "..." }` | Return one stream's state |
 | `POST` | `/api/viewer/session` | `{ "viewerId": "viewer-1", "streamId": "stream-abc" }` | `{ "success": true, "playbackUrl": "http://<server-lan-ip>/hls/stream-abc/master.m3u8" }` | Start or replace the viewer's single active stream |
+| `GET` | `/api/viewer/session?viewerId=viewer-1` | none | `{ "success": true, "streamId": "stream-abc", "playbackUrl": "http://<server-lan-ip>/hls/stream-abc/master.m3u8" }` | Report the viewer's current active stream |
 | `DELETE` | `/api/viewer/session` | `{ "viewerId": "viewer-1" }` | `{ "success": true }` | Stop the viewer's active stream |
 
 The backend stores stream state by `streamId`, not as one global stream. A crashed encoder for `stream-abc` must not stop `stream-def`.

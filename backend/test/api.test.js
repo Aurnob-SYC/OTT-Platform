@@ -463,6 +463,20 @@ test("starts, replaces, and clears one active stream per viewer session", async 
     assert.equal(first.body.previousStreamId, null);
     assert.equal(first.body.playbackUrl, "http://192.168.1.25/hls/stream-alpha/master.m3u8");
 
+    const reportedFirst = await requestJson(
+      address.port,
+      "GET",
+      "/api/viewer/session?viewerId=viewer-1",
+    );
+
+    assert.equal(reportedFirst.statusCode, 200);
+    assert.equal(reportedFirst.body.success, true);
+    assert.equal(reportedFirst.body.streamId, "stream-alpha");
+    assert.equal(
+      reportedFirst.body.playbackUrl,
+      "http://192.168.1.25/hls/stream-alpha/master.m3u8",
+    );
+
     const replaced = await requestJson(address.port, "POST", "/api/viewer/session", {
       viewerId: "viewer-1",
       streamId: "stream-beta",
@@ -471,6 +485,19 @@ test("starts, replaces, and clears one active stream per viewer session", async 
     assert.equal(replaced.statusCode, 200);
     assert.equal(replaced.body.previousStreamId, "stream-alpha");
     assert.equal(replaced.body.session.streamId, "stream-beta");
+
+    const reportedReplaced = await requestJson(
+      address.port,
+      "GET",
+      "/api/viewer/session?viewerId=viewer-1",
+    );
+
+    assert.equal(reportedReplaced.statusCode, 200);
+    assert.equal(reportedReplaced.body.streamId, "stream-beta");
+    assert.equal(
+      reportedReplaced.body.playbackUrl,
+      "http://192.168.1.25/hls/stream-beta/master.m3u8",
+    );
 
     const notPlayable = await requestJson(address.port, "POST", "/api/viewer/session", {
       viewerId: "viewer-2",
@@ -487,6 +514,41 @@ test("starts, replaces, and clears one active stream per viewer session", async 
     assert.equal(cleared.statusCode, 200);
     assert.equal(cleared.body.success, true);
     assert.equal(cleared.body.stoppedStreamId, "stream-beta");
+
+    const reportedCleared = await requestJson(
+      address.port,
+      "GET",
+      "/api/viewer/session?viewerId=viewer-1",
+    );
+
+    assert.equal(reportedCleared.statusCode, 200);
+    assert.equal(reportedCleared.body.streamId, null);
+    assert.equal(reportedCleared.body.playbackUrl, null);
+    assert.equal(reportedCleared.body.session, null);
+
+    await requestJson(address.port, "POST", "/api/viewer/session", {
+      viewerId: "viewer-2",
+      streamId: "stream-beta",
+    });
+
+    const stoppedStream = await requestJson(
+      address.port,
+      "POST",
+      "/api/streams/stream-beta/stop",
+      {},
+    );
+
+    assert.equal(stoppedStream.statusCode, 200);
+    assert.equal(stoppedStream.body.clearedViewerSessions, 1);
+
+    const reportedAfterStreamStop = await requestJson(
+      address.port,
+      "GET",
+      "/api/viewer/session?viewerId=viewer-2",
+    );
+
+    assert.equal(reportedAfterStreamStop.statusCode, 200);
+    assert.equal(reportedAfterStreamStop.body.streamId, null);
   } finally {
     await close(server);
   }

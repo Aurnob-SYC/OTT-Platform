@@ -409,6 +409,30 @@ function createStreamApi(config, options = {}) {
     }
   });
 
+  router.get("/viewer/session", (request, response, next) => {
+    try {
+      const viewerId = readRequiredString(request.query, "viewerId");
+
+      try {
+        assertViewerId(viewerId);
+      } catch (error) {
+        throw badRequest(error.message, "INVALID_VIEWER_ID");
+      }
+
+      const session = viewerSessionStore.getSession(viewerId);
+
+      response.status(200).json({
+        success: true,
+        viewerId,
+        streamId: session ? session.streamId : null,
+        playbackUrl: session ? session.playbackUrl : null,
+        session,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.delete("/viewer/session", (request, response, next) => {
     try {
       const viewerId = readRequiredString(request.body, "viewerId");

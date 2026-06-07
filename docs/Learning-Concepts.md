@@ -547,6 +547,20 @@ one viewer session -> one active stream
 
 If the viewer switches streams, the previous stream selection is replaced.
 
+In the backend, the viewer session API uses a `viewerId` to remember the current choice:
+
+- `POST /api/viewer/session` starts or replaces the selected stream.
+- `GET /api/viewer/session?viewerId=viewer-1` reports the current selected stream.
+- `DELETE /api/viewer/session` clears the selected stream.
+
+The playback URL returned by a viewer session points to nginx, for example:
+
+```text
+http://127.0.0.1/hls/stream-alpha/master.m3u8
+```
+
+That means the backend remembers what the viewer selected, but nginx still serves the actual HLS files.
+
 ## Separation Of Concerns
 
 Separation of concerns means each part of the system has a clear job.

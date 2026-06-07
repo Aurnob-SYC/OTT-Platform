@@ -300,6 +300,8 @@ Dependencies:
 
 Goal: Enforce one active viewed stream per viewer session.
 
+Companion doc: `docs/Chapter-1-Viewer-Session-Model.md`.
+
 Scope:
 
 - Backend records at most one active `streamId` per viewer.
@@ -313,6 +315,7 @@ Implementation tasks:
 3. Return the nginx playback URL for the selected stream.
 4. Replace the previous active stream when the same viewer selects a different stream.
 5. Reject unsupported simultaneous watch attempts if the session model can identify them.
+6. Report or clear the viewer's current active stream by `viewerId`.
 
 Done when:
 

@@ -65,6 +65,7 @@ This keeps API routing separate from the stream metadata model. Part 6 connects 
 | `GET` | `/api/streams` | List active and recently active streams. |
 | `GET` | `/api/streams/:streamId/status` | Return one stream status object. |
 | `POST` | `/api/viewer/session` | Start or replace one viewer's active stream. |
+| `GET` | `/api/viewer/session?viewerId=<viewerId>` | Report one viewer's active stream. |
 | `DELETE` | `/api/viewer/session` | Clear one viewer's active stream. |
 
 ## Stream Creation
@@ -301,6 +302,29 @@ Response:
 
 Calling the same endpoint again for the same `viewerId` replaces the previous stream and returns the old `previousStreamId`.
 
+Report current selection request:
+
+```http
+GET /api/viewer/session?viewerId=viewer-1
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "viewerId": "viewer-1",
+  "streamId": "stream-alpha",
+  "playbackUrl": "http://192.168.1.25/hls/stream-alpha/master.m3u8",
+  "session": {
+    "viewerId": "viewer-1",
+    "streamId": "stream-alpha"
+  }
+}
+```
+
+If the viewer has no active stream, `streamId`, `playbackUrl`, and `session` are `null`.
+
 Clear request:
 
 ```http
@@ -368,8 +392,9 @@ The tests verify:
 - Encoder start records real worker metadata through an injected fake encoder manager.
 - Status and listing endpoints return active and recently active streams.
 - Invalid stream IDs and missing streams return useful JSON errors.
-- One viewer session can start, replace its active stream, and clear it.
+- One viewer session can start, replace its active stream, report its current stream, and clear it.
 - Viewer sessions cannot start against a non-live stream.
+- Stopping a stream clears viewer sessions that were watching it.
 
 Run backend verification with:
 
