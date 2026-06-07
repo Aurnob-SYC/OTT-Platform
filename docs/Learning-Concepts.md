@@ -341,6 +341,62 @@ backend/media/live/<streamId>/
 
 The backend should not proxy these files. This keeps video delivery separate from application orchestration.
 
+The Chapter 1 nginx config lives at:
+
+```text
+config/nginx/chapter-1-hls.conf
+```
+
+It maps the public `/hls/` URL prefix to the generated files on disk.
+
+## nginx Alias
+
+An nginx alias maps a URL path to a folder on disk.
+
+In this project:
+
+```text
+/hls/ -> backend/media/live/
+```
+
+That means this browser URL:
+
+```text
+http://127.0.0.1/hls/stream-alpha/master.m3u8
+```
+
+serves this file:
+
+```text
+backend/media/live/stream-alpha/master.m3u8
+```
+
+The backend does not read and return that file. nginx reads it directly.
+
+## Cache-Control
+
+`Cache-Control` is an HTTP header that tells browsers and proxies how long they can reuse a response.
+
+For live HLS, manifests need to stay fresh because they keep changing as new segments are created. This project serves `.m3u8` files with no-cache headers.
+
+Segments are small video chunks that do not change after FFmpeg writes them. This project lets nginx cache `.ts` segments briefly, for example 10 seconds.
+
+## Directory Listing
+
+Directory listing means a web server shows the files inside a folder when someone opens the folder URL.
+
+For this project, directory listing should stay off. A viewer can request known HLS files like:
+
+```text
+/hls/stream-alpha/master.m3u8
+```
+
+but opening a folder like this should not show a list of files:
+
+```text
+/hls/stream-alpha/
+```
+
 ## Proxy
 
 A proxy forwards a request from one server to another.

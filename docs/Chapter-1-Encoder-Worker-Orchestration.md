@@ -74,6 +74,7 @@ FFmpeg writes each rendition to its own directory:
 backend/media/live/<streamId>/360p/index.m3u8
 backend/media/live/<streamId>/480p/index.m3u8
 backend/media/live/<streamId>/720p/index.m3u8
+backend/media/live/<streamId>/<rendition>/000000.ts
 ```
 
 The backend writes a master playlist at:

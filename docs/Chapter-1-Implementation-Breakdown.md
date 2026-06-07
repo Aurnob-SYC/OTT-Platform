@@ -268,6 +268,8 @@ Dependencies:
 
 Goal: Serve generated HLS files through nginx using the stable `/hls/` prefix.
 
+Companion doc: `docs/Chapter-1-nginx-HLS-Delivery.md`.
+
 Scope:
 
 - nginx serves manifests and segments from `backend/media/live/`.

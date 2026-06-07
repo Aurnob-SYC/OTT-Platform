@@ -44,6 +44,20 @@ backend/media/live/<streamId>/
 
 The backend ensures `backend/media/live/` exists at startup. It does not serve manifests or segments; nginx must alias `/hls/` to this directory.
 
+The Chapter 1 nginx server block is checked in at:
+
+```text
+config/nginx/chapter-1-hls.conf
+```
+
+For this workspace, the config maps:
+
+```text
+/hls/ -> D:/Work/OTT-Platform/backend/media/live/
+```
+
+If the repo is somewhere else on disk, update the `alias` path before starting nginx.
+
 Stale HLS output is preserved by default so a backend restart never deletes media unexpectedly. For local throwaway runs, set:
 
 ```text
@@ -78,7 +92,7 @@ The backend treats `live/<streamId>` as the relay boundary and can reference the
 ## Startup Order
 
 1. Start MediaMTX with WebRTC publishing enabled on the LAN.
-2. Start nginx with `/hls/` aliased to `backend/media/live/`.
+2. Start nginx with `config/nginx/chapter-1-hls.conf` or an equivalent `/hls/` alias to `backend/media/live/`.
 3. Start the backend with `npm start` from `backend/`.
 4. Start the frontend with `npm run dev` from `frontend/`.
 5. Open `GET /api/runtime/status` on the backend to confirm URL construction and the absolute HLS root.

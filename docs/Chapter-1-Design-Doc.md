@@ -129,13 +129,13 @@ backend/media/live/
     master.m3u8
     360p/
       index.m3u8
-      segment_00001.ts
+      000000.ts
     480p/
       index.m3u8
-      segment_00001.ts
+      000000.ts
     720p/
       index.m3u8
-      segment_00001.ts
+      000000.ts
   stream-def/
     master.m3u8
     360p/
@@ -216,7 +216,7 @@ FFmpeg writes generated HLS files to per-stream directories:
 ```text
 backend/media/live/<streamId>/master.m3u8
 backend/media/live/<streamId>/<rendition>/index.m3u8
-backend/media/live/<streamId>/<rendition>/segment_00001.ts
+backend/media/live/<streamId>/<rendition>/000000.ts
 ```
 
 This structure prevents concurrent streams from overwriting each other's manifests and segments. It also lets nginx serve all streams through one stable `/hls/` URL prefix.
@@ -239,6 +239,12 @@ Example playback URL:
 http://<server-lan-ip>/hls/<streamId>/master.m3u8
 ```
 
+The checked-in Chapter 1 nginx config lives at:
+
+```text
+config/nginx/chapter-1-hls.conf
+```
+
 #### Recommended nginx Config
 
 ```nginx
@@ -247,7 +253,7 @@ server {
     server_name _;
 
     location /hls/ {
-        alias D:/OTT-Platform/backend/media/live/;
+        alias D:/Work/OTT-Platform/backend/media/live/;
         autoindex off;
 
         location ~ \.m3u8$ {
