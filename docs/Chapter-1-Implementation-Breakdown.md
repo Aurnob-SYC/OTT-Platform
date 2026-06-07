@@ -240,6 +240,8 @@ Dependencies:
 
 Goal: Mark streams live only after usable HLS output exists.
 
+Companion doc: `docs/Chapter-1-HLS-Output-Readiness.md`.
+
 Scope:
 
 - Detect `master.m3u8`.

@@ -158,6 +158,17 @@ function createFakeSpawn(calls) {
   };
 }
 
+function writeReadyHlsOutput(stream, renditions = ["360p", "480p", "720p"]) {
+  fs.mkdirSync(stream.output.hlsOutputDir, { recursive: true });
+  fs.writeFileSync(path.join(stream.output.hlsOutputDir, "master.m3u8"), "#EXTM3U\n");
+
+  for (const rendition of renditions) {
+    const renditionDir = path.join(stream.output.hlsOutputDir, rendition);
+    fs.mkdirSync(renditionDir, { recursive: true });
+    fs.writeFileSync(path.join(renditionDir, "index.m3u8"), "#EXTM3U\n");
+  }
+}
+
 test("exposes stream creation, publishing, encoder metadata, status, listing, and stop APIs", async () => {
   const config = createTestConfig();
   const server = createServer(config, {
@@ -224,6 +235,20 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     assert.equal(encoding.body.stream.state, "encoding");
     assert.equal(encoding.body.stream.encoder.inputUrl, "rtsp://127.0.0.1:8554/live/stream-alpha");
     assert.equal(encoding.body.stream.encoder.commandLine.includes("ffmpeg"), true);
+    assert.equal(encoding.body.stream.output.readiness.ready, false);
+    assert.deepEqual(encoding.body.stream.output.readiness.missing, [
+      "master.m3u8",
+      "360p/index.m3u8",
+      "480p/index.m3u8",
+    ]);
+
+    const prematureViewer = await requestJson(address.port, "POST", "/api/viewer/session", {
+      viewerId: "viewer-warming",
+      streamId: "stream-alpha",
+    });
+
+    assert.equal(prematureViewer.statusCode, 409);
+    assert.equal(prematureViewer.body.error, "STREAM_NOT_PLAYABLE");
 
     const status = await requestJson(
       address.port,
@@ -233,12 +258,27 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
 
     assert.equal(status.statusCode, 200);
     assert.equal(status.body.streamId, "stream-alpha");
+    assert.equal(status.body.state, "encoding");
     assert.equal(status.body.output.playbackUrl, "http://192.168.1.25/hls/stream-alpha/master.m3u8");
+
+    writeReadyHlsOutput(status.body, ["360p", "480p"]);
+
+    const readyStatus = await requestJson(
+      address.port,
+      "GET",
+      "/api/streams/stream-alpha/status",
+    );
+
+    assert.equal(readyStatus.statusCode, 200);
+    assert.equal(readyStatus.body.state, "live");
+    assert.equal(readyStatus.body.output.readiness.ready, true);
+    assert.deepEqual(readyStatus.body.output.readiness.missing, []);
 
     const listActive = await requestJson(address.port, "GET", "/api/streams");
 
     assert.equal(listActive.statusCode, 200);
     assert.deepEqual(listActive.body.active.map((stream) => stream.streamId), ["stream-alpha"]);
+    assert.equal(listActive.body.active[0].state, "live");
     assert.deepEqual(listActive.body.recent, []);
     assert.equal(listActive.body.streams.length, 1);
 
@@ -391,8 +431,19 @@ test("starts, replaces, and clears one active stream per viewer session", async 
   streamStore.createStream({ streamId: "stream-alpha", title: "Alpha" });
   streamStore.createStream({ streamId: "stream-beta", title: "Beta" });
   streamStore.createStream({ streamId: "stream-waiting", title: "Waiting" });
-  streamStore.markLive("stream-alpha");
-  streamStore.markLive("stream-beta");
+  const alpha = streamStore.markEncoding("stream-alpha", {
+    encoder: {
+      renditions: ["360p"],
+    },
+  });
+  const beta = streamStore.markEncoding("stream-beta", {
+    encoder: {
+      renditions: ["360p"],
+    },
+  });
+
+  writeReadyHlsOutput(alpha, ["360p"]);
+  writeReadyHlsOutput(beta, ["360p"]);
 
   const server = createServer(config, {
     streamApiOptions: {

@@ -7,6 +7,7 @@ const {
   cleanupStreamOutputDirectory,
   createEncoderWorkerManager,
 } = require("./encoderWorker");
+const { inspectHlsReadiness } = require("./hlsReadiness");
 const { STREAM_STATES, createStreamStore } = require("./streams");
 const { assertStreamId } = require("./urlBuilders");
 const {
@@ -128,8 +129,15 @@ function ensureCanStartEncoder(status) {
 }
 
 function ensureCanView(status) {
-  if (status.state === STREAM_STATES.LIVE) {
+  if (status.state === STREAM_STATES.LIVE && status.output.readiness.ready) {
     return;
+  }
+
+  if (status.state === STREAM_STATES.LIVE) {
+    throw conflict(
+      `Cannot start viewer session for stream ${status.streamId} before HLS output is ready.`,
+      "STREAM_NOT_PLAYABLE",
+    );
   }
 
   throw conflict(
@@ -211,6 +219,34 @@ function createStreamApi(config, options = {}) {
     });
   const router = express.Router();
 
+  function refreshHlsReadiness(status) {
+    if (status.state !== STREAM_STATES.ENCODING && status.state !== STREAM_STATES.LIVE) {
+      return status;
+    }
+
+    const readiness = inspectHlsReadiness(status);
+
+    if (status.state === STREAM_STATES.ENCODING && readiness.ready) {
+      return streamStore.markLive(status.streamId, {
+        outputReadiness: readiness,
+      });
+    }
+
+    return streamStore.updateOutputReadiness(status.streamId, readiness);
+  }
+
+  function refreshStreamStatus(streamId) {
+    return refreshHlsReadiness(requireStreamStatus(streamStore, streamId));
+  }
+
+  function refreshActiveStreamReadiness() {
+    const listing = streamStore.listStreams({ includeRecentlyActive: false });
+
+    for (const stream of listing.active) {
+      refreshHlsReadiness(stream);
+    }
+  }
+
   router.post("/streams", (request, response, next) => {
     try {
       const stream = streamStore.createStream({
@@ -230,6 +266,7 @@ function createStreamApi(config, options = {}) {
 
   router.get("/streams", (request, response, next) => {
     try {
+      refreshActiveStreamReadiness();
       const listing = streamStore.listStreams();
 
       response.status(200).json({
@@ -245,7 +282,7 @@ function createStreamApi(config, options = {}) {
   router.get("/streams/:streamId/status", (request, response, next) => {
     try {
       assertKnownStreamId(request.params.streamId);
-      response.status(200).json(requireStreamStatus(streamStore, request.params.streamId));
+      response.status(200).json(refreshStreamStatus(request.params.streamId));
     } catch (error) {
       next(error);
     }
@@ -298,12 +335,13 @@ function createStreamApi(config, options = {}) {
           stderrTail: startStatus.stderrTail,
         },
       });
+      const refreshedStream = refreshHlsReadiness(stream);
 
       response.status(200).json({
         success: true,
-        pid: stream.encoder.pid,
-        renditions: stream.encoder.renditions || renditions,
-        stream,
+        pid: refreshedStream.encoder.pid,
+        renditions: refreshedStream.encoder.renditions || renditions,
+        stream: refreshedStream,
       });
     } catch (error) {
       next(error);
@@ -349,7 +387,7 @@ function createStreamApi(config, options = {}) {
 
       assertKnownStreamId(streamId);
 
-      const stream = requireStreamStatus(streamStore, streamId);
+      const stream = refreshStreamStatus(streamId);
       ensureCanView(stream);
 
       const result = viewerSessionStore.startOrReplaceSession({

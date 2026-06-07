@@ -288,6 +288,33 @@ http://<server-lan-ip>/hls/<streamId>/master.m3u8
 
 Manifests need to stay fresh because live streams keep changing as new segments are created.
 
+## HLS Output Readiness
+
+HLS output readiness means the backend has checked that a stream has enough playlist files to be playable.
+
+An encoder can be running before the viewer can play anything. In this project, that stream should stay in:
+
+```text
+encoding
+```
+
+until the HLS output exists, such as:
+
+```text
+backend/media/live/stream-alpha/master.m3u8
+backend/media/live/stream-alpha/360p/index.m3u8
+backend/media/live/stream-alpha/480p/index.m3u8
+backend/media/live/stream-alpha/720p/index.m3u8
+```
+
+After those expected playlists exist and are not empty, the backend can mark the stream:
+
+```text
+live
+```
+
+This matters because a viewer should not receive a playback URL for a stream that FFmpeg is still warming up.
+
 ## Segment
 
 A segment is a small chunk of video or audio.

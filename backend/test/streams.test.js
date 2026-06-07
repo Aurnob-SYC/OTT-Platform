@@ -60,6 +60,8 @@ test("creates independent stream records with per-stream relay and HLS paths", (
   assert.equal(first.relay.whipUrl, "http://192.168.1.25:8889/live/stream-alpha/whip");
   assert.equal(first.output.playbackUrl, "http://192.168.1.25/hls/stream-alpha/master.m3u8");
   assert.match(first.output.hlsOutputDir, /stream-alpha$/);
+  assert.equal(first.output.readiness.ready, false);
+  assert.equal(first.output.readiness.masterPlaylist.relativePath, "master.m3u8");
 
   assert.equal(second.streamId, "stream-beta");
   assert.equal(second.relay.mediaMtxPath, "live/stream-beta");

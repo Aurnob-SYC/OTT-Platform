@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 
+const { createInitialHlsReadiness } = require("./hlsReadiness");
 const { assertStreamId, buildStreamUrls } = require("./urlBuilders");
 
 const STREAM_STATES = Object.freeze({
@@ -90,6 +91,7 @@ function createStreamRecord(config, input, timestamp) {
     whipUrl: streamUrls.whipUrl,
     playbackUrl: streamUrls.playbackUrl,
     hlsOutputDir: streamUrls.hlsOutputDir,
+    outputReadiness: createInitialHlsReadiness(streamUrls.hlsOutputDir),
     encoder: createInitialEncoderStatus(),
     error: null,
     createdAt: timestamp,
@@ -116,6 +118,7 @@ function toStreamStatus(record) {
     output: {
       hlsOutputDir: record.hlsOutputDir,
       playbackUrl: record.playbackUrl,
+      readiness: clone(record.outputReadiness),
     },
     encoder: clone(record.encoder),
     error: record.error ? clone(record.error) : null,
@@ -211,6 +214,10 @@ function createStreamStore(config, options = {}) {
         };
       }
 
+      if (details.outputReadiness !== undefined) {
+        record.outputReadiness = clone(details.outputReadiness);
+      }
+
       if (details.error !== undefined) {
         record.error = details.error;
       }
@@ -242,6 +249,12 @@ function createStreamStore(config, options = {}) {
 
   function markLive(streamId, details = {}) {
     return setStreamState(streamId, STREAM_STATES.LIVE, details);
+  }
+
+  function updateOutputReadiness(streamId, outputReadiness) {
+    const record = requireStream(streamId);
+    record.outputReadiness = clone(outputReadiness);
+    return toStreamStatus(record);
   }
 
   function markStopped(streamId, details = {}) {
@@ -312,6 +325,7 @@ function createStreamStore(config, options = {}) {
     markPublishing,
     markStopped,
     setStreamState,
+    updateOutputReadiness,
   };
 }
 
