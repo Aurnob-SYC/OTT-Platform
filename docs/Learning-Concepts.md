@@ -561,6 +561,34 @@ http://127.0.0.1/hls/stream-alpha/master.m3u8
 
 That means the backend remembers what the viewer selected, but nginx still serves the actual HLS files.
 
+## Browser HLS Player
+
+A browser HLS player is the frontend code that loads a `master.m3u8` URL and asks the browser to play it.
+
+Some browsers can play HLS directly in a `<video>` element. Other browsers need a JavaScript helper such as `hls.js`, which reads the HLS manifest and feeds media into the same video element.
+
+In this repo, the viewer player setup lives in:
+
+```text
+frontend/src/services/hlsPlayer.ts
+```
+
+The important rule is that one viewer session uses one player instance. When the viewer switches from `stream-alpha` to `stream-beta`, the frontend stops and destroys the old HLS player before loading the new playback URL.
+
+## Player Lifecycle
+
+A player lifecycle is the set of steps for starting, using, and cleaning up a media player.
+
+For Chapter 1, the viewer lifecycle is:
+
+1. Select a live stream.
+2. Ask the backend to start or replace the viewer session.
+3. Load the returned nginx HLS URL into the video player.
+4. Show whether playback is loading, ready, playing, unavailable, or failed.
+5. Stop the player and clear the backend viewer session when the viewer stops watching.
+
+This matters because a live player uses browser memory, network bandwidth, and media buffers. Cleaning up the previous player before switching streams helps enforce the one-active-stream rule.
+
 ## Separation Of Concerns
 
 Separation of concerns means each part of the system has a clear job.

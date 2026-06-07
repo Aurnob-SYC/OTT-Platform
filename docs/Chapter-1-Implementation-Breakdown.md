@@ -333,6 +333,8 @@ Dependencies:
 
 Goal: Let a viewer list active streams and watch one selected stream at a time.
 
+Companion doc: `docs/Chapter-1-Viewer-Browser-Flow.md`.
+
 Scope:
 
 - Fetch stream list from the backend.

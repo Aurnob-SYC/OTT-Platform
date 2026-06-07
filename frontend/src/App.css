@@ -245,6 +245,17 @@
   gap: 14px;
 }
 
+.stream-panel-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .stream-card {
   display: grid;
   width: 100%;
@@ -466,6 +477,36 @@
   padding: 10px 12px;
 }
 
+.viewer-session {
+  display: grid;
+  gap: 14px;
+}
+
+.viewer-player-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: black;
+}
+
+.viewer-player {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: black;
+}
+
+.player-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.45);
+  color: var(--fg);
+  font-weight: 800;
+}
+
 .session-card {
   display: grid;
   gap: 8px;
@@ -555,6 +596,13 @@
 
 .btn-secondary:hover {
   background: color-mix(in oklch, var(--border) 35%, transparent);
+}
+
+.btn.compact {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 0.82rem;
 }
 
 .empty-state {
@@ -674,6 +722,7 @@
   }
 
   .button-group,
+  .stream-panel-tools,
   .operator-strip {
     flex-direction: column;
     align-items: stretch;

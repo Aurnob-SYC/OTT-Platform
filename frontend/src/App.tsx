@@ -1,97 +1,174 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { Header } from './components/Header'
 import { PipelinePanel } from './components/PipelinePanel'
 import { PublisherPanel } from './components/PublisherPanel'
 import { SessionPanel } from './components/SessionPanel'
 import { StreamsPanel } from './components/StreamsPanel'
-import { INITIAL_STREAMS } from './data/streams'
+import {
+  ApiClientError,
+  listStreams,
+  startViewerSession,
+  stopViewerSession,
+} from './services/backendApi'
 import type { BackendStreamStatus, LiveStream, PipelineStage, WatchSession } from './types'
 
 const VIEWER_ID = 'viewer-1'
+const STREAM_REFRESH_MS = 5000
+
+function toUserErrorMessage(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    return `${error.code}: ${error.message}`
+  }
+
+  if (error instanceof Error) {
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      return 'Could not reach the backend API. Start the backend on port 4000.'
+    }
+
+    return error.message
+  }
+
+  return 'Unexpected frontend error.'
+}
+
+function mapBackendStreamToLiveStream(stream: BackendStreamStatus): LiveStream {
+  const startedAt = Date.parse(
+    stream.timestamps.liveAt ||
+      stream.timestamps.encodingStartedAt ||
+      stream.timestamps.publishingStartedAt ||
+      stream.timestamps.createdAt,
+  )
+
+  return {
+    bitrate: stream.encoder.renditions?.join(', ') || '-',
+    creator: stream.publisher.userId || 'unknown',
+    encoderPid: stream.encoder.pid ?? undefined,
+    hlsOutput: stream.output.hlsOutputDir,
+    id: stream.streamId,
+    mediaMtxPath: stream.relay.mediaMtxPath,
+    playbackUrl: stream.output.playbackUrl,
+    resolution: stream.encoder.renditions?.at(-1) || 'pending',
+    startedAt: Number.isNaN(startedAt) ? Date.now() : startedAt,
+    status: stream.state,
+    title: stream.title,
+    viewers: 0,
+  }
+}
 
 function App() {
-  const [streams, setStreams] = useState<LiveStream[]>(INITIAL_STREAMS)
+  const [isRefreshingStreams, setIsRefreshingStreams] = useState(false)
   const [session, setSession] = useState<WatchSession | undefined>()
+  const [streamListError, setStreamListError] = useState<string>()
+  const [streams, setStreams] = useState<LiveStream[]>([])
 
   const selectedStream = useMemo(
     () => streams.find((stream) => stream.id === session?.streamId),
     [session?.streamId, streams],
   )
+  const hasActiveViewerSession =
+    session?.playbackState === 'loading' ||
+    session?.playbackState === 'ready' ||
+    session?.playbackState === 'playing'
 
   const liveCount = streams.filter((stream) => stream.status === 'live').length
-  const viewerCount = streams.reduce((sum, stream) => sum + stream.viewers, 0) + (session ? 1 : 0)
-  const activeStage: PipelineStage = session ? 'watch' : 'publish'
+  const viewerCount =
+    streams.reduce((sum, stream) => sum + stream.viewers, 0) + (hasActiveViewerSession ? 1 : 0)
+  const activeStage: PipelineStage = hasActiveViewerSession ? 'watch' : 'publish'
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setStreams((currentStreams) =>
-        currentStreams.map((stream) => {
-          if (stream.status !== 'live') {
-            return stream
-          }
+  const refreshStreams = useCallback(async (): Promise<void> => {
+    setIsRefreshingStreams(true)
 
-          const drift = Math.floor(Math.random() * 5) - 2
-
-          return {
-            ...stream,
-            viewers: Math.max(0, stream.viewers + drift),
-          }
-        }),
-      )
-    }, 4000)
-
-    return () => window.clearInterval(interval)
+    try {
+      const response = await listStreams()
+      setStreams(response.streams.map(mapBackendStreamToLiveStream))
+      setStreamListError(undefined)
+    } catch (error) {
+      setStreamListError(toUserErrorMessage(error))
+    } finally {
+      setIsRefreshingStreams(false)
+    }
   }, [])
 
-  function startWatchSession(stream: LiveStream): void {
+  useEffect(() => {
+    const initialRefresh = window.setTimeout(() => {
+      void refreshStreams()
+    }, 0)
+    const interval = window.setInterval(() => {
+      void refreshStreams()
+    }, STREAM_REFRESH_MS)
+
+    return () => {
+      window.clearInterval(interval)
+      window.clearTimeout(initialRefresh)
+    }
+  }, [refreshStreams])
+
+  useEffect(() => {
+    function clearViewerSession(): void {
+      void stopViewerSession(VIEWER_ID, { keepalive: true }).catch(() => undefined)
+    }
+
+    window.addEventListener('pagehide', clearViewerSession)
+
+    return () => {
+      window.removeEventListener('pagehide', clearViewerSession)
+    }
+  }, [])
+
+  async function startWatchSession(stream: LiveStream): Promise<void> {
     if (stream.status !== 'live') {
+      setSession({
+        errorMessage: 'Only live, HLS-ready streams can be played.',
+        playbackState: 'stream-unavailable',
+        playbackUrl: stream.playbackUrl,
+        streamId: stream.id,
+      })
       return
     }
 
     setSession({
-      playbackState: 'ready',
-      playbackUrl: `/hls/${stream.id}/master.m3u8`,
+      playbackState: 'loading',
+      playbackUrl: '',
       streamId: stream.id,
     })
-  }
 
-  function playSelectedStream(): void {
-    setSession((currentSession) =>
-      currentSession
-        ? {
-            ...currentSession,
-            playbackState: 'playing',
-          }
-        : currentSession,
-    )
-  }
+    try {
+      const response = await startViewerSession(VIEWER_ID, stream.id)
 
-  function stopWatchSession(): void {
-    setSession(undefined)
-  }
-
-  function mapBackendStreamToLiveStream(stream: BackendStreamStatus): LiveStream {
-    const startedAt = Date.parse(
-      stream.timestamps.liveAt ||
-        stream.timestamps.encodingStartedAt ||
-        stream.timestamps.publishingStartedAt ||
-        stream.timestamps.createdAt,
-    )
-
-    return {
-      bitrate: stream.encoder.renditions?.join(', ') || '-',
-      creator: stream.publisher.userId || 'unknown',
-      encoderPid: stream.encoder.pid ?? undefined,
-      hlsOutput: stream.output.hlsOutputDir,
-      id: stream.streamId,
-      mediaMtxPath: stream.relay.mediaMtxPath,
-      resolution: stream.encoder.renditions?.at(-1) || 'pending',
-      startedAt: Number.isNaN(startedAt) ? Date.now() : startedAt,
-      status: stream.state,
-      title: stream.title,
-      viewers: 0,
+      setSession({
+        playbackState: 'loading',
+        playbackUrl: response.playbackUrl,
+        streamId: response.streamId,
+      })
+    } catch (error) {
+      setSession({
+        errorMessage: toUserErrorMessage(error),
+        playbackState: 'stream-unavailable',
+        playbackUrl: stream.playbackUrl,
+        streamId: stream.id,
+      })
     }
+  }
+
+  const updatePlaybackState = useCallback(
+    (playbackState: WatchSession['playbackState'], errorMessage?: string): void => {
+      setSession((currentSession) =>
+        currentSession
+          ? {
+              ...currentSession,
+              errorMessage,
+              playbackState,
+            }
+          : currentSession,
+      )
+    },
+    [],
+  )
+
+  async function stopWatchSession(): Promise<void> {
+    await stopViewerSession(VIEWER_ID).catch(() => undefined)
+    setSession(undefined)
   }
 
   function upsertBackendStream(stream: BackendStreamStatus): void {
@@ -127,11 +204,14 @@ function App() {
           <PublisherPanel onStreamChanged={upsertBackendStream} />
           <StreamsPanel
             activeStreamId={session?.streamId}
+            errorMessage={streamListError}
+            isRefreshing={isRefreshingStreams}
+            onRefresh={() => void refreshStreams()}
             onSelectStream={startWatchSession}
             streams={streams}
           />
           <SessionPanel
-            onPlay={playSelectedStream}
+            onPlaybackStateChange={updatePlaybackState}
             onStop={stopWatchSession}
             session={session}
             stream={selectedStream}

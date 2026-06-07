@@ -27,6 +27,33 @@ interface StopStreamResponse {
   success: boolean
 }
 
+interface ListStreamsResponse {
+  active: BackendStreamStatus[]
+  recent: BackendStreamStatus[]
+  streams: BackendStreamStatus[]
+}
+
+interface StartViewerSessionResponse {
+  playbackUrl: string
+  previousStreamId: string | null
+  session: {
+    playbackUrl: string
+    startedAt: string
+    streamId: string
+    updatedAt: string
+    viewerId: string
+  }
+  streamId: string
+  success: boolean
+  viewerId: string
+}
+
+interface StopViewerSessionResponse {
+  stoppedStreamId: string | null
+  success: boolean
+  viewerId: string
+}
+
 export interface CreateStreamInput {
   publisherUserId?: string
   title: string
@@ -103,6 +130,10 @@ export async function createStream(input: CreateStreamInput): Promise<CreateStre
   })
 }
 
+export async function listStreams(): Promise<ListStreamsResponse> {
+  return requestJson<ListStreamsResponse>('/streams')
+}
+
 export async function startPublishing(
   streamId: string,
   input: StartPublishingInput,
@@ -116,5 +147,26 @@ export async function startPublishing(
 export async function stopStream(streamId: string): Promise<StopStreamResponse> {
   return requestJson<StopStreamResponse>(`/streams/${encodeURIComponent(streamId)}/stop`, {
     method: 'POST',
+  })
+}
+
+export async function startViewerSession(
+  viewerId: string,
+  streamId: string,
+): Promise<StartViewerSessionResponse> {
+  return requestJson<StartViewerSessionResponse>('/viewer/session', {
+    body: JSON.stringify({ streamId, viewerId }),
+    method: 'POST',
+  })
+}
+
+export async function stopViewerSession(
+  viewerId: string,
+  options: { keepalive?: boolean } = {},
+): Promise<StopViewerSessionResponse> {
+  return requestJson<StopViewerSessionResponse>('/viewer/session', {
+    body: JSON.stringify({ viewerId }),
+    keepalive: options.keepalive,
+    method: 'DELETE',
   })
 }

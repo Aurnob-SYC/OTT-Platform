@@ -4,15 +4,35 @@ import { Panel } from './Panel'
 
 interface StreamsPanelProps {
   activeStreamId?: string
+  errorMessage?: string
+  isRefreshing: boolean
+  onRefresh: () => void
   onSelectStream: (stream: LiveStream) => void
   streams: LiveStream[]
 }
 
-export function StreamsPanel({ activeStreamId, onSelectStream, streams }: StreamsPanelProps) {
+export function StreamsPanel({
+  activeStreamId,
+  errorMessage,
+  isRefreshing,
+  onRefresh,
+  onSelectStream,
+  streams,
+}: StreamsPanelProps) {
   const playableCount = streams.filter((stream) => stream.status === 'live').length
 
   return (
     <Panel badge={`${playableCount} live`} title="Active Streams">
+      <div className="stream-panel-tools">
+        <span>{isRefreshing ? 'Refreshing stream list' : 'Backend stream list'}</span>
+        <button className="btn btn-secondary compact" onClick={onRefresh} type="button">
+          <span aria-hidden="true">R</span>
+          Refresh
+        </button>
+      </div>
+
+      {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
+
       {streams.length === 0 ? (
         <EmptyState title="No streams yet" message="Publish a stream to see it appear in this list." />
       ) : (

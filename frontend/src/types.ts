@@ -37,6 +37,7 @@ export interface LiveStream {
   hlsOutput: string
   id: string
   mediaMtxPath: string
+  playbackUrl: string
   resolution: string
   startedAt: number
   status: StreamStatus
@@ -45,7 +46,8 @@ export interface LiveStream {
 }
 
 export interface WatchSession {
-  playbackState: 'loading' | 'ready' | 'playing'
+  errorMessage?: string
+  playbackState: 'loading' | 'ready' | 'playing' | 'stopped' | 'stream-unavailable' | 'playback-error'
   playbackUrl: string
   streamId: string
 }
