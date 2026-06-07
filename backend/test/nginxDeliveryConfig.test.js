@@ -13,9 +13,21 @@ const nginxConfigPath = path.join(
   "nginx",
   "chapter-1-hls.conf",
 );
+const nginxRuntimeConfigPath = path.join(
+  __dirname,
+  "..",
+  "..",
+  "config",
+  "nginx",
+  "chapter-1-runtime.conf",
+);
 
 function readNginxConfig() {
   return fs.readFileSync(nginxConfigPath, "utf8");
+}
+
+function readNginxRuntimeConfig() {
+  return fs.readFileSync(nginxRuntimeConfigPath, "utf8");
 }
 
 test("nginx HLS config aliases /hls/ to the generated media root", () => {
@@ -45,4 +57,12 @@ test("nginx HLS config includes CORS headers for cross-origin frontend playback"
   assert.match(config, /Access-Control-Allow-Origin "\*"/);
   assert.match(config, /Access-Control-Allow-Methods "GET, HEAD, OPTIONS"/);
   assert.match(config, /Access-Control-Allow-Headers "Range"/);
+});
+
+test("nginx runtime config loads the Chapter 1 HLS server block", () => {
+  const config = readNginxRuntimeConfig();
+
+  assert.match(config, /events\s*{/);
+  assert.match(config, /http\s*{/);
+  assert.match(config, /include D:\/Work\/OTT-Platform\/config\/nginx\/chapter-1-hls\.conf;/);
 });
