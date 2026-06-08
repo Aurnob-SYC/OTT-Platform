@@ -29,7 +29,7 @@ config/nginx/chapter-1-hls.conf
 For this workspace it aliases:
 
 ```text
-/hls/ -> D:/Work/OTT-Platform/backend/media/live/
+/hls/ -> D:/OTT-Platform/backend/media/live/
 ```
 
 If the repo is cloned somewhere else, update the `alias` path before starting nginx. Keep the trailing slash on the alias path because nginx uses it to map:
@@ -41,7 +41,7 @@ If the repo is cloned somewhere else, update the `alias` path before starting ng
 to:
 
 ```text
-D:/Work/OTT-Platform/backend/media/live/stream-alpha/master.m3u8
+D:/OTT-Platform/backend/media/live/stream-alpha/master.m3u8
 ```
 
 ## Cache Rules

@@ -7,6 +7,7 @@ const path = require("node:path");
 const { buildMediaMtxPath, buildStreamHlsOutputDir } = require("./urlBuilders");
 
 const MAX_STDERR_TAIL_LENGTH = 8 * 1024;
+const OUTPUT_FRAME_RATE = 30;
 const HLS_SEGMENT_SECONDS = 2;
 const HLS_PLAYLIST_SIZE = 5;
 
@@ -162,7 +163,7 @@ function buildScaleFilter(renditions) {
 
   for (const rendition of renditions) {
     filters.push(
-      `[r${rendition.name}in]scale=w=${rendition.width}:h=${rendition.height}:force_original_aspect_ratio=decrease,pad=${rendition.width}:${rendition.height}:(ow-iw)/2:(oh-ih)/2:color=black[vr${rendition.name}]`,
+      `[r${rendition.name}in]fps=${OUTPUT_FRAME_RATE},scale=w=${rendition.width}:h=${rendition.height}:force_original_aspect_ratio=decrease,pad=${rendition.width}:${rendition.height}:(ow-iw)/2:(oh-ih)/2:color=black[vr${rendition.name}]`,
     );
   }
 
@@ -427,6 +428,7 @@ module.exports = {
   HLS_PLAYLIST_SIZE,
   HLS_SEGMENT_SECONDS,
   MAX_STDERR_TAIL_LENGTH,
+  OUTPUT_FRAME_RATE,
   RENDITION_DEFINITIONS,
   appendToTail,
   buildEncoderInputUrl,

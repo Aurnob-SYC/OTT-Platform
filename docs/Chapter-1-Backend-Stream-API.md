@@ -172,6 +172,8 @@ Response:
 
 Part 6 starts a real per-stream FFmpeg worker. The encoder status includes the process PID, MediaMTX RTSP input URL, HLS output directory, selected renditions, command line, and bounded stderr tail.
 
+The encoder filter graph clamps each rendition to 30 fps before scaling. This avoids a MediaMTX RTSP/WebRTC timing issue where FFmpeg can report VP8 video as `90k fps`, causing HLS segments and rendition playlists to take far too long to flush.
+
 Allowed source states:
 
 ```text

@@ -1,7 +1,3 @@
-export type PipelineStage = 'publish' | 'encode' | 'serve' | 'watch'
-
-export type PipelineStatus = 'done' | 'active' | 'idle'
-
 export type StreamStatus =
   | 'created'
   | 'publishing'
@@ -18,17 +14,6 @@ export type PublisherState =
   | 'live'
   | 'stopped'
   | 'failed'
-
-export interface PipelineStep {
-  actor: string
-  code?: string
-  description: string
-  id: number
-  prefix?: string
-  stage: PipelineStage
-  status: PipelineStatus
-  suffix?: string
-}
 
 export interface LiveStream {
   bitrate: string

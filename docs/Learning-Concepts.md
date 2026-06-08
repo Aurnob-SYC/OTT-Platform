@@ -122,6 +122,12 @@ For streams, this project uses states such as:
 
 State helps the frontend show useful UI and helps the backend reject unsafe actions.
 
+In the publisher flow, `publishing` does not mean HLS output is ready yet. It only means the backend has issued a MediaMTX path and the browser is expected to publish camera media into that path. After the WHIP/WebRTC connection succeeds, the frontend calls the backend encoder endpoint. That backend call starts FFmpeg and moves the stream to `encoding`.
+
+This is why a stream can appear stuck in `publishing`: MediaMTX might already be receiving the browser camera, but FFmpeg has not been started for that stream yet.
+
+The app now asks the backend to wait until the MediaMTX path is `ready` and inbound media bytes are increasing before starting FFmpeg. That small wait prevents a race where FFmpeg tries to read `rtsp://127.0.0.1:8554/live/<streamId>` a moment too early. It also prevents a quieter hang where the WebRTC session exists, but camera media is not actually flowing into MediaMTX yet.
+
 ## LAN
 
 LAN means local area network.
@@ -167,6 +173,22 @@ In this project, the publisher browser uses WebRTC to send camera media to Media
 
 WebRTC is useful for live capture because it is designed for low-latency media from browsers.
 
+## ICE Candidate
+
+An ICE candidate is one network address that WebRTC can try when it is building a connection.
+
+In simple terms, the WHIP HTTP request starts the session, but the real media still needs a reachable network path. MediaMTX can answer the WHIP request successfully and the browser can still disconnect a moment later if the browser cannot reach the server's advertised ICE address or port.
+
+In this repo's local MediaMTX config:
+
+- HTTPS handshake happens on `8889`
+- WebRTC media uses `8189/UDP`, with `8189/TCP` available as a fallback
+- MediaMTX advertises `192.168.80.168` as the reachable LAN host instead of every Windows interface
+
+That is why opening or trusting `https://<server-lan-ip>:8889` is necessary but not always sufficient. The firewall must also allow the ICE media port.
+
+Windows machines often have extra network interfaces, including link-local addresses that begin with `169.254.`. If MediaMTX advertises one of those addresses to the browser, the WebRTC connection can look established while media bytes barely move. In this repo, `webrtcIPsFromInterfaces: false` avoids those accidental candidates and `webrtcAdditionalHosts` provides the LAN IP we actually want browsers to use.
+
 ## WHIP
 
 WHIP is a standard way for a browser or client to publish WebRTC media to a server.
@@ -211,6 +233,23 @@ FFmpeg is responsible for media processing work such as:
 - writing playlist and segment files
 
 The backend starts FFmpeg as a separate worker process for each stream.
+
+## Source Tree Vs Binary
+
+A source tree is the project code used to build a program. A binary is the ready-to-run program file.
+
+For FFmpeg on Windows:
+
+- A source folder contains files like `configure`, `Makefile`, and C source code.
+- A runnable install contains `ffmpeg.exe`, usually inside a `bin/` folder.
+
+In this repo, `FFMPEG_BINARY` must point to the real executable path, for example:
+
+```text
+D:/tools/ffmpeg/bin/ffmpeg.exe
+```
+
+Pointing `FFMPEG_BINARY` at a source folder such as `D:/tools/ffmpeg/ffmpeg-8.1.1` will not work, because the backend needs an executable file it can spawn.
 
 ## RTSP
 
@@ -321,6 +360,32 @@ A segment is a small chunk of video or audio.
 
 For Chapter 1, HLS segments are planned to be about 2 seconds long.
 
+## Frame Rate Clamp
+
+Frame rate is how many video frames are shown each second.
+
+When FFmpeg reads a browser-published WebRTC stream through MediaMTX's RTSP output, it can sometimes see the video timing as:
+
+```text
+90k fps
+```
+
+That does not mean the camera is really sending 90,000 frames every second. It comes from RTP clock timing used by the media protocol.
+
+This matters for HLS because FFmpeg writes new HLS segments after enough media time has passed. If FFmpeg thinks the stream is 90,000 fps, a 2-second segment can take about 180,000 frames before it is flushed. The backend then stays in:
+
+```text
+encoding
+```
+
+because the rendition playlists, such as `360p/index.m3u8`, have not appeared yet.
+
+The encoder fixes this by adding an explicit 30 fps filter before scaling each rendition. That gives FFmpeg normal camera-like timing, so HLS playlists can be written quickly and the backend can move the stream to:
+
+```text
+live
+```
+
 Segments are easier to serve and cache than one giant video file.
 
 ## nginx
@@ -416,6 +481,12 @@ For HLS, the project should not proxy video through the backend.
 A secure context means the browser considers the page safe enough for sensitive features.
 
 Camera and microphone access usually require a secure context. `localhost` is usually allowed for local testing, but a LAN IP usually needs HTTPS.
+
+In this repo, that means the frontend dev server should also run over HTTPS when you open it from another device on the LAN, for example:
+
+```text
+https://192.168.0.102:5173
+```
 
 That is why LAN publishing often uses:
 

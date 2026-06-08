@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { Header } from './components/Header'
-import { PipelinePanel } from './components/PipelinePanel'
 import { PublisherPanel } from './components/PublisherPanel'
 import { SessionPanel } from './components/SessionPanel'
 import { StreamsPanel } from './components/StreamsPanel'
@@ -11,7 +10,7 @@ import {
   startViewerSession,
   stopViewerSession,
 } from './services/backendApi'
-import type { BackendStreamStatus, LiveStream, PipelineStage, WatchSession } from './types'
+import type { BackendStreamStatus, LiveStream, WatchSession } from './types'
 
 const VIEWER_ID = 'viewer-1'
 const STREAM_REFRESH_MS = 5000
@@ -60,6 +59,7 @@ function App() {
   const [isRefreshingStreams, setIsRefreshingStreams] = useState(false)
   const [session, setSession] = useState<WatchSession | undefined>()
   const [streamListError, setStreamListError] = useState<string>()
+  const [backendStreams, setBackendStreams] = useState<BackendStreamStatus[]>([])
   const [streams, setStreams] = useState<LiveStream[]>([])
 
   const selectedStream = useMemo(
@@ -74,13 +74,13 @@ function App() {
   const liveCount = streams.filter((stream) => stream.status === 'live').length
   const viewerCount =
     streams.reduce((sum, stream) => sum + stream.viewers, 0) + (hasActiveViewerSession ? 1 : 0)
-  const activeStage: PipelineStage = hasActiveViewerSession ? 'watch' : 'publish'
 
   const refreshStreams = useCallback(async (): Promise<void> => {
     setIsRefreshingStreams(true)
 
     try {
       const response = await listStreams()
+      setBackendStreams(response.streams)
       setStreams(response.streams.map(mapBackendStreamToLiveStream))
       setStreamListError(undefined)
     } catch (error) {
@@ -174,10 +174,23 @@ function App() {
   function upsertBackendStream(stream: BackendStreamStatus): void {
     const nextStream = mapBackendStreamToLiveStream(stream)
 
-    setStreams((currentStreams) => {
+    setBackendStreams((currentStreams) => {
       const existingIndex = currentStreams.findIndex(
-        (currentStream) => currentStream.id === nextStream.id,
+        (currentStream) => currentStream.streamId === stream.streamId,
       )
+
+      if (existingIndex === -1) {
+        return [stream, ...currentStreams]
+      }
+
+      const updatedStreams = [...currentStreams]
+      updatedStreams[existingIndex] = stream
+
+      return updatedStreams
+    })
+
+    setStreams((currentStreams) => {
+      const existingIndex = currentStreams.findIndex((currentStream) => currentStream.id === nextStream.id)
 
       if (existingIndex === -1) {
         return [nextStream, ...currentStreams]
@@ -198,10 +211,8 @@ function App() {
       <Header liveCount={liveCount} totalCount={streams.length} viewerCount={viewerCount} />
 
       <main className="app-layout">
-        <PipelinePanel activeStage={activeStage} isPlaying={session?.playbackState === 'playing'} />
-
         <div className="side-stack">
-          <PublisherPanel onStreamChanged={upsertBackendStream} />
+          <PublisherPanel onStreamChanged={upsertBackendStream} streams={backendStreams} />
           <StreamsPanel
             activeStreamId={session?.streamId}
             errorMessage={streamListError}

@@ -18,6 +18,9 @@ webrtcAddress: :8889
 webrtcEncryption: true
 webrtcServerKey: server.key
 webrtcServerCert: server.crt
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts: [<server-lan-ip>]
 
 pathDefaults:
   source: publisher
@@ -32,6 +35,8 @@ Notes:
 - `webrtcAddress: :8889` exposes browser WebRTC and WHIP publishing on the LAN-facing host port.
 - `webrtcEncryption: true` is required for browser camera and microphone access from a non-localhost address.
 - When `webrtcEncryption` is enabled, set `MEDIAMTX_WEBRTC_BASE_URL=https://<server-lan-ip>:8889` in `backend/.env`.
+- `webrtcAdditionalHosts` should include the same LAN IP so browsers receive a reachable ICE candidate.
+- `webrtcLocalUDPAddress` and `webrtcLocalTCPAddress` expose the ICE media listener. UDP is preferred; TCP gives a fallback when UDP is blocked or unreliable.
 - Open the publish page with `https://<server-lan-ip>:8889/live/<streamId>/publish`.
 - `apiAddress: 127.0.0.1:9997` keeps the Control API local to the server machine for Chapter 1.
 - `rtspAddress: 127.0.0.1:8554` gives FFmpeg a local read endpoint for `rtsp://127.0.0.1:8554/live/<streamId>`.
@@ -84,8 +89,10 @@ Check these first:
 - Confirm `server.key` and `server.crt` exist if `webrtcEncryption: true` is enabled.
 - On Windows, a local self-signed PEM pair works fine here too. The important part is that both files sit beside `mediamtx.yml` and are PEM-formatted, not PFX.
 - From the server machine, test the port with `Test-NetConnection 192.168.0.102 -Port 8889`.
+- Remember that WebRTC also needs the ICE media port, not only the HTTPS handshake port. With the checked-in config, MediaMTX listens on `8189/UDP` and `8189/TCP`, so Windows Firewall must allow inbound traffic on `8189` in addition to TCP `8889`.
 - From the same machine, try `https://localhost:8889/live/stream-manual/publish` if you are only doing a local smoke test.
 - If you are connecting from another device, make sure Windows Firewall allows inbound traffic to port `8889`.
+- If your custom frontend says the WebRTC connection disconnected, try MediaMTX's built-in page at `https://<server-lan-ip>:8889/live/<streamId>/publish`. If the built-in page also fails, the problem is in MediaMTX, certificate trust, firewall, or ICE reachability rather than the React app.
 
 If the port is reachable but the page still fails, the next thing to inspect is the MediaMTX startup log. The browser page can only work after MediaMTX is actually serving the WebRTC endpoint.
 

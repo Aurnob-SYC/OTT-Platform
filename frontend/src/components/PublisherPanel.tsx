@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BackendStreamStatus, PublisherState } from '../types'
-import { ApiClientError, createStream, startPublishing, stopStream } from '../services/backendApi'
+import { ApiClientError, createStream, startEncoder, startPublishing, stopStream } from '../services/backendApi'
 import { WhipPublisherSession, publishMediaWithWhip } from '../services/whipPublisher'
 import { EmptyState } from './StreamsPanel'
 import { Panel } from './Panel'
 
 interface PublisherPanelProps {
   onStreamChanged: (stream: BackendStreamStatus) => void
+  streams: BackendStreamStatus[]
 }
 
 const PUBLISHER_STATE_LABELS: Record<PublisherState, string> = {
@@ -17,6 +18,7 @@ const PUBLISHER_STATE_LABELS: Record<PublisherState, string> = {
   'requesting-permissions': 'permissions',
   stopped: 'stopped',
 }
+const DISCONNECTED_GRACE_MS = 5000
 
 function defaultTitle(): string {
   return `Desk cam ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
@@ -70,23 +72,7 @@ function toPublisherErrorMessage(error: unknown): string {
   return 'Publisher setup failed.'
 }
 
-function upsertStream(
-  streams: BackendStreamStatus[],
-  nextStream: BackendStreamStatus,
-): BackendStreamStatus[] {
-  const existingIndex = streams.findIndex((stream) => stream.streamId === nextStream.streamId)
-
-  if (existingIndex === -1) {
-    return [nextStream, ...streams]
-  }
-
-  const updatedStreams = [...streams]
-  updatedStreams[existingIndex] = nextStream
-  return updatedStreams
-}
-
-export function PublisherPanel({ onStreamChanged }: PublisherPanelProps) {
-  const [createdStreams, setCreatedStreams] = useState<BackendStreamStatus[]>([])
+export function PublisherPanel({ onStreamChanged, streams }: PublisherPanelProps) {
   const [errorMessage, setErrorMessage] = useState<string>()
   const [includeAudio, setIncludeAudio] = useState(true)
   const [localMedia, setLocalMedia] = useState<MediaStream | null>(null)
@@ -96,13 +82,14 @@ export function PublisherPanel({ onStreamChanged }: PublisherPanelProps) {
   const [userId, setUserId] = useState('user-123')
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const disconnectTimerRef = useRef<number | null>(null)
   const localMediaRef = useRef<MediaStream | null>(null)
   const publisherSessionRef = useRef<WhipPublisherSession | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
 
   const selectedStream = useMemo(
-    () => createdStreams.find((stream) => stream.streamId === selectedStreamId),
-    [createdStreams, selectedStreamId],
+    () => streams.find((stream) => stream.streamId === selectedStreamId),
+    [streams, selectedStreamId],
   )
   const isStarting =
     publisherState === 'requesting-permissions' || publisherState === 'connecting'
@@ -117,14 +104,25 @@ export function PublisherPanel({ onStreamChanged }: PublisherPanelProps) {
 
   useEffect(() => {
     return () => {
+      if (disconnectTimerRef.current !== null) {
+        window.clearTimeout(disconnectTimerRef.current)
+      }
       abortControllerRef.current?.abort()
       publisherSessionRef.current?.stop().catch(() => undefined)
       stopMediaTracks(localMediaRef.current)
     }
   }, [])
 
+  function clearDisconnectTimer(): void {
+    if (disconnectTimerRef.current === null) {
+      return
+    }
+
+    window.clearTimeout(disconnectTimerRef.current)
+    disconnectTimerRef.current = null
+  }
+
   function rememberStream(stream: BackendStreamStatus): void {
-    setCreatedStreams((currentStreams) => upsertStream(currentStreams, stream))
     setSelectedStreamId(stream.streamId)
     onStreamChanged(stream)
   }
@@ -149,7 +147,9 @@ export function PublisherPanel({ onStreamChanged }: PublisherPanelProps) {
 
   function assertCaptureSupport(): void {
     if (!window.isSecureContext) {
-      throw new Error('Camera capture requires HTTPS or localhost.')
+      throw new Error(
+        'Camera capture requires HTTPS. Open the app at https://<server-lan-ip>:5173 or use http://localhost:5173 on the same machine.',
+      )
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -205,10 +205,13 @@ export function PublisherPanel({ onStreamChanged }: PublisherPanelProps) {
 
     const abortController = new AbortController()
     abortControllerRef.current = abortController
+    let activeStreamId: string | null = null
+    clearDisconnectTimer()
     setErrorMessage(undefined)
 
     try {
       const stream = await ensurePublishTarget()
+      activeStreamId = stream.streamId
 
       setPublisherState('requesting-permissions')
       const mediaStream = await requestLocalMedia()
@@ -226,20 +229,51 @@ export function PublisherPanel({ onStreamChanged }: PublisherPanelProps) {
         mediaStream,
         onConnectionStateChange: (state) => {
           if (state === 'connected') {
+            clearDisconnectTimer()
+            setErrorMessage(undefined)
             setPublisherState('live')
             return
           }
 
-          if (state === 'failed' || state === 'disconnected') {
-            setErrorMessage(`MediaMTX WebRTC connection ${state}.`)
+          if (state === 'disconnected') {
+            clearDisconnectTimer()
+            disconnectTimerRef.current = window.setTimeout(() => {
+              disconnectTimerRef.current = null
+              setErrorMessage(
+                `MediaMTX WebRTC connection stayed disconnected for more than ${
+                  DISCONNECTED_GRACE_MS / 1000
+                } seconds.`,
+              )
+              setPublisherState('failed')
+            }, DISCONNECTED_GRACE_MS)
+            return
+          }
+
+          if (state === 'failed') {
+            clearDisconnectTimer()
+            setErrorMessage(
+              'MediaMTX WebRTC connection failed. Check that this browser trusts the HTTPS certificate and that firewall allows MediaMTX ports 8889/TCP and 8189/TCP+UDP.',
+            )
             setPublisherState('failed')
           }
         },
         signal: abortController.signal,
       })
 
+      const encoderStart = await startEncoder(stream.streamId, {
+        waitForRelayReady: true,
+      })
+      rememberStream(encoderStart.stream)
       setPublisherState('live')
     } catch (error) {
+      const activeSession = publisherSessionRef.current
+      publisherSessionRef.current = null
+      await activeSession?.stop().catch(() => undefined)
+
+      if (activeStreamId) {
+        await stopStream(activeStreamId).catch(() => undefined)
+      }
+
       if (isAbortError(error)) {
         setPublisherState('stopped')
       } else {
@@ -260,6 +294,7 @@ export function PublisherPanel({ onStreamChanged }: PublisherPanelProps) {
   async function handleStopPublishing(): Promise<void> {
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
+    clearDisconnectTimer()
 
     const activeSession = publisherSessionRef.current
     publisherSessionRef.current = null
@@ -323,12 +358,12 @@ export function PublisherPanel({ onStreamChanged }: PublisherPanelProps) {
           <label className="field">
             <span>Stream target</span>
             <select
-              disabled={isActivePublisher || createdStreams.length === 0}
+              disabled={isActivePublisher || streams.length === 0}
               onChange={(event) => setSelectedStreamId(event.target.value)}
               value={selectedStreamId}
             >
               <option value="">New stream target</option>
-              {createdStreams.map((stream) => (
+              {streams.map((stream) => (
                 <option key={stream.streamId} value={stream.streamId}>
                   {stream.streamId} - {stream.state}
                 </option>

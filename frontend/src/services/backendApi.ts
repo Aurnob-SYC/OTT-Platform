@@ -21,6 +21,13 @@ interface PublishStartResponse {
   whipUrl: string
 }
 
+interface EncoderStartResponse {
+  pid: number | null
+  renditions: string[]
+  stream: BackendStreamStatus
+  success: boolean
+}
+
 interface StopStreamResponse {
   clearedViewerSessions: number
   stream: BackendStreamStatus
@@ -61,6 +68,11 @@ export interface CreateStreamInput {
 
 export interface StartPublishingInput {
   userId: string
+}
+
+export interface StartEncoderInput {
+  renditions?: string[]
+  waitForRelayReady?: boolean
 }
 
 export class ApiClientError extends Error {
@@ -139,6 +151,16 @@ export async function startPublishing(
   input: StartPublishingInput,
 ): Promise<PublishStartResponse> {
   return requestJson<PublishStartResponse>(`/streams/${encodeURIComponent(streamId)}/publish/start`, {
+    body: JSON.stringify(input),
+    method: 'POST',
+  })
+}
+
+export async function startEncoder(
+  streamId: string,
+  input: StartEncoderInput = {},
+): Promise<EncoderStartResponse> {
+  return requestJson<EncoderStartResponse>(`/streams/${encodeURIComponent(streamId)}/encoder/start`, {
     body: JSON.stringify(input),
     method: 'POST',
   })

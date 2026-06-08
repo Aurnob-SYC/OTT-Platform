@@ -19,6 +19,7 @@ const {
   assertViewerId,
   createViewerSessionStore,
 } = require("./viewerSessions");
+const { waitForMediaMtxPathMediaFlow } = require("./mediaMtx");
 
 const DEFAULT_RENDITIONS = Object.freeze(["360p", "480p", "720p"]);
 const SUPPORTED_RENDITIONS = new Set(Object.keys(RENDITION_DEFINITIONS));
@@ -51,6 +52,19 @@ function readOptionalString(body, key) {
   }
 
   return String(value);
+}
+
+function readOptionalBoolean(body, key, fallback = false) {
+  const value = body ? body[key] : undefined;
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  throw badRequest(`${key} must be true or false.`);
 }
 
 function readRequiredString(body, key) {
@@ -236,6 +250,7 @@ function createStreamApi(config, options = {}) {
         }
       },
     });
+  const mediaMtxPathWaiter = options.mediaMtxPathWaiter || waitForMediaMtxPathMediaFlow;
   const router = express.Router();
 
   function refreshHlsReadiness(status) {
@@ -336,12 +351,23 @@ function createStreamApi(config, options = {}) {
     }
   });
 
-  router.post("/streams/:streamId/encoder/start", (request, response, next) => {
+  router.post("/streams/:streamId/encoder/start", async (request, response, next) => {
     try {
       assertKnownStreamId(request.params.streamId);
 
       const current = requireStreamStatus(streamStore, request.params.streamId);
       ensureCanStartEncoder(current);
+
+      if (readOptionalBoolean(request.body, "waitForRelayReady", false)) {
+        const relayStatus = await mediaMtxPathWaiter(config, request.params.streamId);
+
+        if (!relayStatus.ready) {
+          throw conflict(
+            `MediaMTX path ${current.relay.mediaMtxPath} did not receive media before the encoder start timeout.`,
+            "MEDIAMTX_MEDIA_NOT_FLOWING",
+          );
+        }
+      }
 
       const renditions = readRenditions(request.body);
       const startStatus = encoderManager.startEncoder(current, { renditions });

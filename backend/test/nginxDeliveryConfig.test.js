@@ -19,7 +19,13 @@ const nginxRuntimeConfigPath = path.join(
   "..",
   "config",
   "nginx",
-  "chapter-1-runtime.conf",
+  "runtime-nginx.conf",
+);
+const repoRoot = path.resolve(__dirname, "..", "..");
+const hlsRoot = path.join(repoRoot, "backend", "media", "live").replace(/\\/g, "/");
+const runtimeIncludePath = path.join(repoRoot, "config", "nginx", "chapter-1-hls.conf").replace(
+  /\\/g,
+  "/",
 );
 
 function readNginxConfig() {
@@ -34,7 +40,7 @@ test("nginx HLS config aliases /hls/ to the generated media root", () => {
   const config = readNginxConfig();
 
   assert.match(config, /location \/hls\//);
-  assert.match(config, /alias D:\/Work\/OTT-Platform\/backend\/media\/live\//);
+  assert.match(config, new RegExp(`alias ${hlsRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\/`));
   assert.match(config, /autoindex off;/);
   assert.doesNotMatch(config, /proxy_pass/);
 });
@@ -64,5 +70,5 @@ test("nginx runtime config loads the Chapter 1 HLS server block", () => {
 
   assert.match(config, /events\s*{/);
   assert.match(config, /http\s*{/);
-  assert.match(config, /include D:\/Work\/OTT-Platform\/config\/nginx\/chapter-1-hls\.conf;/);
+  assert.match(config, new RegExp(`include ${runtimeIncludePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")};`));
 });

@@ -94,6 +94,52 @@ function waitForIceGatheringComplete(
   })
 }
 
+function waitForPeerConnectionConnected(
+  peerConnection: RTCPeerConnection,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (peerConnection.connectionState === 'connected') {
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve, reject) => {
+    let timeoutId = 0
+
+    const cleanup = (): void => {
+      window.clearTimeout(timeoutId)
+      peerConnection.removeEventListener('connectionstatechange', handleConnectionStateChange)
+      signal?.removeEventListener('abort', handleAbort)
+    }
+
+    const handleAbort = (): void => {
+      cleanup()
+      reject(new DOMException('Publishing was stopped.', 'AbortError'))
+    }
+
+    const handleConnectionStateChange = (): void => {
+      if (peerConnection.connectionState === 'connected') {
+        cleanup()
+        resolve()
+        return
+      }
+
+      if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
+        cleanup()
+        reject(new Error(`MediaMTX WebRTC connection ${peerConnection.connectionState}.`))
+      }
+    }
+
+    timeoutId = window.setTimeout(() => {
+      cleanup()
+      reject(new Error('Timed out waiting for MediaMTX WebRTC media connection.'))
+    }, 10000)
+
+    peerConnection.addEventListener('connectionstatechange', handleConnectionStateChange)
+    signal?.addEventListener('abort', handleAbort, { once: true })
+    handleConnectionStateChange()
+  })
+}
+
 async function readWhipError(response: Response): Promise<string> {
   const body = await response.text()
   const detail = body.trim()
@@ -157,6 +203,8 @@ export async function publishMediaWithWhip(
       sdp: answerSdp,
       type: 'answer',
     })
+
+    await waitForPeerConnectionConnected(peerConnection, options.signal)
 
     completed = true
     return new WhipPublisherSession(

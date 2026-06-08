@@ -349,6 +349,90 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
   }
 });
 
+test("waits for MediaMTX relay readiness before requested encoder start", async () => {
+  const config = createTestConfig();
+  const waitedStreamIds = [];
+  const server = createServer(config, {
+    streamApiOptions: {
+      encoderManager: createFakeEncoderManager(),
+      mediaMtxPathWaiter: async (_config, streamId) => {
+        waitedStreamIds.push(streamId);
+        return {
+          details: {
+            name: `live/${streamId}`,
+            ready: true,
+          },
+          ready: true,
+        };
+      },
+      streamStoreOptions: {
+        idGenerator: () => "stream-alpha",
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    await requestJson(address.port, "POST", "/api/streams", {
+      title: "Desk cam",
+    });
+    await requestJson(address.port, "POST", "/api/streams/stream-alpha/publish/start", {});
+
+    const encoding = await requestJson(
+      address.port,
+      "POST",
+      "/api/streams/stream-alpha/encoder/start",
+      {
+        waitForRelayReady: true,
+      },
+    );
+
+    assert.equal(encoding.statusCode, 200);
+    assert.equal(encoding.body.stream.state, "encoding");
+    assert.deepEqual(waitedStreamIds, ["stream-alpha"]);
+  } finally {
+    await close(server);
+  }
+});
+
+test("rejects requested encoder start when MediaMTX relay media is not flowing", async () => {
+  const config = createTestConfig();
+  const server = createServer(config, {
+    streamApiOptions: {
+      encoderManager: createFakeEncoderManager(),
+      mediaMtxPathWaiter: async () => ({
+        details: null,
+        ready: false,
+      }),
+      streamStoreOptions: {
+        idGenerator: () => "stream-alpha",
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    await requestJson(address.port, "POST", "/api/streams", {
+      title: "Desk cam",
+    });
+    await requestJson(address.port, "POST", "/api/streams/stream-alpha/publish/start", {});
+
+    const encoding = await requestJson(
+      address.port,
+      "POST",
+      "/api/streams/stream-alpha/encoder/start",
+      {
+        waitForRelayReady: true,
+      },
+    );
+
+    assert.equal(encoding.statusCode, 409);
+    assert.equal(encoding.body.error, "MEDIAMTX_MEDIA_NOT_FLOWING");
+  } finally {
+    await close(server);
+  }
+});
+
 test("returns useful JSON errors for invalid stream IDs and missing streams", async () => {
   const server = createServer(createTestConfig());
   const address = await listen(server);

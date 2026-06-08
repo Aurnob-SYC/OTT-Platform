@@ -12,6 +12,7 @@ const {
   HLS_PLAYLIST_SIZE,
   HLS_SEGMENT_SECONDS,
   MAX_STDERR_TAIL_LENGTH,
+  OUTPUT_FRAME_RATE,
   appendToTail,
   buildEncoderInputUrl,
   buildFfmpegCommand,
@@ -75,6 +76,7 @@ test("builds an FFmpeg command for RTSP input and per-stream HLS output", () => 
   assert.equal(command.args.includes("aac"), true);
   assert.equal(command.args.includes(String(HLS_SEGMENT_SECONDS)), true);
   assert.equal(command.args.includes(String(HLS_PLAYLIST_SIZE)), true);
+  assert.match(command.args.join(" "), new RegExp(`fps=${OUTPUT_FRAME_RATE}`));
   assert.equal(command.args.includes(path.join(stream.output.hlsOutputDir, "360p", "index.m3u8")), true);
   assert.equal(command.args.includes(path.join(stream.output.hlsOutputDir, "480p", "index.m3u8")), true);
   assert.equal(command.args.includes(path.join(stream.output.hlsOutputDir, "720p", "index.m3u8")), true);

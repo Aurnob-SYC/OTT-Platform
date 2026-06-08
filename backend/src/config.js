@@ -150,7 +150,7 @@ function createRuntimeConfig(env = process.env, options = {}) {
     },
     frontend: {
       baseUrl: normalizeBaseUrl(
-        readString(env, "FRONTEND_BASE_URL", `http://${lanHost}:${frontendPort}`),
+        readString(env, "FRONTEND_BASE_URL", `https://${lanHost}:${frontendPort}`),
         "FRONTEND_BASE_URL",
       ),
       port: frontendPort,

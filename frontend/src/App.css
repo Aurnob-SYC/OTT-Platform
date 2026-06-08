@@ -93,9 +93,10 @@
 
 .app-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.92fr);
+  grid-template-columns: minmax(360px, 920px);
+  justify-content: center;
   gap: 24px;
-  width: min(1440px, 100%);
+  width: min(980px, 100%);
   margin: 0 auto;
   padding: 24px 32px 32px;
 }
@@ -104,6 +105,7 @@
   display: grid;
   align-content: start;
   gap: 20px;
+  width: 100%;
 }
 
 .panel {
@@ -145,99 +147,6 @@
 
 .panel-body {
   padding: 18px;
-}
-
-.pipeline {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.pipeline-step {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 28px;
-  align-items: center;
-  gap: 14px;
-  min-height: 58px;
-  padding: 10px 12px;
-  border-radius: 8px;
-}
-
-.pipeline-step:hover {
-  background: var(--surface-raised);
-}
-
-.step-num {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  color: var(--bg);
-  font: 800 0.82rem/1 var(--font-mono);
-}
-
-.stage-publish .step-num {
-  background: var(--publish);
-}
-
-.stage-encode .step-num {
-  background: var(--encode);
-}
-
-.stage-serve .step-num {
-  background: var(--serve);
-}
-
-.stage-watch .step-num {
-  background: var(--watch);
-}
-
-.step-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.step-actor {
-  color: var(--subtle);
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.step-action {
-  color: var(--fg);
-  font-size: 0.93rem;
-  line-height: 1.35;
-}
-
-.step-state {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.state-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-}
-
-.state-dot.online {
-  background: var(--publish);
-}
-
-.state-dot.offline {
-  background: var(--subtle);
-  opacity: 0.45;
-}
-
-.state-dot.busy {
-  background: var(--encode);
-  animation: pulse 1s ease-in-out infinite;
 }
 
 .stream-grid {
@@ -697,19 +606,6 @@
 
   .stream-metrics div {
     min-width: 0;
-  }
-
-  .pipeline-step {
-    grid-template-columns: 32px minmax(0, 1fr) 20px;
-    gap: 10px;
-    min-height: 54px;
-    padding: 9px 8px;
-  }
-
-  .step-num {
-    width: 27px;
-    height: 27px;
-    font-size: 0.72rem;
   }
 
   .stream-meta-row {
