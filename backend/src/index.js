@@ -10,6 +10,12 @@ const { getRuntimeSummary, validateRuntime } = require("./runtime");
 const { createStreamApi, sendApiError } = require("./streamApi");
 const { buildStreamUrls } = require("./urlBuilders");
 
+/**
+ * Creates the Express application with all backend routes and middleware wired up.
+ * @param {object} config - Runtime configuration used by the API routes.
+ * @param {object} [options={}] - Optional dependency injection for the stream API layer.
+ * @returns {import("express").Express} The configured Express app.
+ */
 function createApp(config, options = {}) {
   const app = express();
   const streamApi = createStreamApi(config, options.streamApiOptions);
@@ -62,6 +68,12 @@ function createApp(config, options = {}) {
   return app;
 }
 
+/**
+ * Creates the HTTP server that wraps the Express app.
+ * @param {object} config - Runtime configuration used to build the app.
+ * @param {object} [options={}] - Optional dependency injection passed through to `createApp`.
+ * @returns {import("node:http").Server & {streamApi?: object}} The created Node HTTP server.
+ */
 function createServer(config, options = {}) {
   // Express handles request routing; Node still owns the actual HTTP server socket.
   const app = createApp(config, options);
@@ -70,6 +82,10 @@ function createServer(config, options = {}) {
   return server;
 }
 
+/**
+ * Starts the backend from environment variables and wires up shutdown handlers.
+ * @returns {import("node:http").Server} The started HTTP server instance.
+ */
 function start() {
   // Startup does three things in order: load env, build config, validate the runtime layout.
   loadEnvFile();
@@ -85,6 +101,10 @@ function start() {
     console.log(`MediaMTX WebRTC base URL: ${config.mediaMtx.webRtcBaseUrl}`);
   });
 
+  /**
+   * Stops encoder workers first, then closes the HTTP server and exits the process.
+   * @returns {void}
+   */
   function shutdown() {
     console.log("Stopping encoder workers before backend shutdown...");
     server.streamApi.encoderManager.stopAllEncoders();

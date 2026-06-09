@@ -10,11 +10,20 @@ export class WhipPublisherSession {
   private readonly resourceUrl?: string
   private stopped = false
 
+  /**
+   * Stores the peer connection and optional WHIP resource URL for later cleanup.
+   * @param peerConnection - The active WebRTC peer connection used for publishing.
+   * @param resourceUrl - Optional WHIP resource URL that can be deleted on stop.
+   */
   constructor(peerConnection: RTCPeerConnection, resourceUrl?: string) {
     this.peerConnection = peerConnection
     this.resourceUrl = resourceUrl
   }
 
+  /**
+   * Closes the WebRTC connection and deletes the WHIP resource if one was returned.
+   * @returns {Promise<void>} Resolves after cleanup finishes or immediately if already stopped.
+   */
   async stop(): Promise<void> {
     if (this.stopped) {
       return
@@ -33,18 +42,33 @@ export class WhipPublisherSession {
   }
 }
 
+/**
+ * Ensures the current browser supports the WebRTC peer connection API.
+ * @returns {void}
+ */
 function assertWebRtcSupport(): void {
   if (!('RTCPeerConnection' in window)) {
     throw new Error('This browser does not support RTCPeerConnection.')
   }
 }
 
+/**
+ * Throws an AbortError when the caller has already cancelled the publish flow.
+ * @param signal - Optional abort signal from the caller.
+ * @returns {void}
+ */
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new DOMException('Publishing was stopped.', 'AbortError')
   }
 }
 
+/**
+ * Resolves a WHIP Location header into an absolute resource URL.
+ * @param endpointUrl - The WHIP endpoint that was used for the publish request.
+ * @param location - The Location header returned by the server, if any.
+ * @returns {string | undefined} The absolute resource URL, or undefined when the server did not provide one.
+ */
 function resolveResourceUrl(endpointUrl: string, location: string | null): string | undefined {
   if (!location) {
     return undefined
@@ -53,6 +77,12 @@ function resolveResourceUrl(endpointUrl: string, location: string | null): strin
   return new URL(location, endpointUrl).toString()
 }
 
+/**
+ * Waits until ICE gathering finishes so the full SDP offer can be sent to WHIP.
+ * @param peerConnection - The peer connection performing candidate gathering.
+ * @param signal - Optional abort signal to cancel the wait.
+ * @returns {Promise<void>} Resolves when gathering completes or times out.
+ */
 function waitForIceGatheringComplete(
   peerConnection: RTCPeerConnection,
   signal?: AbortSignal,
@@ -94,6 +124,12 @@ function waitForIceGatheringComplete(
   })
 }
 
+/**
+ * Waits until the peer connection reaches the connected state or fails.
+ * @param peerConnection - The peer connection being monitored.
+ * @param signal - Optional abort signal to cancel the wait.
+ * @returns {Promise<void>} Resolves when connected, or rejects on failure or timeout.
+ */
 function waitForPeerConnectionConnected(
   peerConnection: RTCPeerConnection,
   signal?: AbortSignal,
@@ -140,6 +176,11 @@ function waitForPeerConnectionConnected(
   })
 }
 
+/**
+ * Reads a non-OK WHIP response and turns it into a useful error message.
+ * @param response - The HTTP response returned by the WHIP endpoint.
+ * @returns {Promise<string>} A human-readable error message.
+ */
 async function readWhipError(response: Response): Promise<string> {
   const body = await response.text()
   const detail = body.trim()
@@ -151,6 +192,11 @@ async function readWhipError(response: Response): Promise<string> {
   return `MediaMTX WHIP endpoint returned status ${response.status}.`
 }
 
+/**
+ * Publishes a MediaStream to MediaMTX using the WHIP protocol.
+ * @param options - Publish settings including endpoint URL, media stream, and abort support.
+ * @returns {Promise<WhipPublisherSession>} A session object that can later stop the publish flow.
+ */
 export async function publishMediaWithWhip(
   options: WhipPublishOptions,
 ): Promise<WhipPublisherSession> {

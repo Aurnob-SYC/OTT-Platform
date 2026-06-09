@@ -5,6 +5,12 @@ const path = require("node:path");
 
 const MASTER_PLAYLIST = "master.m3u8";
 
+/**
+ * Checks whether a playlist file exists and whether it is usable for playback.
+ * @param {string} outputDir - Base HLS output directory for the stream.
+ * @param {string} relativePath - Playlist path relative to the output directory.
+ * @returns {{relativePath: string, path: string, exists: boolean, sizeBytes: number, usable: boolean, error?: string}} File inspection details.
+ */
 function inspectPlaylist(outputDir, relativePath) {
   const playlistPath = path.join(outputDir, ...relativePath.split("/"));
 
@@ -42,6 +48,11 @@ function inspectPlaylist(outputDir, relativePath) {
   }
 }
 
+/**
+ * Normalizes a renditions list into trimmed, non-empty strings.
+ * @param {unknown} renditions - The renditions value received from stream state or options.
+ * @returns {string[]} A cleaned list of rendition names.
+ */
 function normalizeRenditions(renditions) {
   if (!Array.isArray(renditions)) {
     return [];
@@ -52,6 +63,11 @@ function normalizeRenditions(renditions) {
     .filter((rendition) => rendition !== "");
 }
 
+/**
+ * Builds the default unreadiness state for a stream before playlists exist.
+ * @param {string} outputDir - HLS output directory being checked.
+ * @returns {object} A readiness object describing the missing master playlist.
+ */
 function createInitialHlsReadiness(outputDir) {
   return {
     ready: false,
@@ -69,6 +85,12 @@ function createInitialHlsReadiness(outputDir) {
   };
 }
 
+/**
+ * Evaluates whether the master playlist and expected rendition playlists are ready.
+ * @param {object} stream - Stream record containing output metadata and encoder rendition info.
+ * @param {object} [options={}] - Optional overrides for output directory, renditions, and clock source.
+ * @returns {object} A readiness report with file checks and a list of missing playlists.
+ */
 function inspectHlsReadiness(stream, options = {}) {
   const outputDir =
     options.outputDir ||

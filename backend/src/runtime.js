@@ -3,6 +3,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+/**
+ * Verifies that required runtime config values are present before the backend starts.
+ * @param {object} config - Runtime configuration object created by `createRuntimeConfig`.
+ * @returns {void}
+ */
 function assertRequiredConfig(config) {
   const missing = [];
 
@@ -19,6 +24,11 @@ function assertRequiredConfig(config) {
   }
 }
 
+/**
+ * Ensures a filesystem path exists and is actually a directory.
+ * @param {string} directoryPath - Path to create and validate.
+ * @returns {void}
+ */
 function ensureDirectory(directoryPath) {
   // Create the directory if it does not exist, then verify it really is a directory.
   fs.mkdirSync(directoryPath, { recursive: true });
@@ -29,6 +39,11 @@ function ensureDirectory(directoryPath) {
   }
 }
 
+/**
+ * Deletes existing HLS output entries so a backend restart can start cleanly.
+ * @param {string} mediaRoot - Absolute or relative HLS media root directory.
+ * @returns {void}
+ */
 function cleanStaleHlsOutput(mediaRoot) {
   const absoluteMediaRoot = path.resolve(mediaRoot);
 
@@ -45,6 +60,11 @@ function cleanStaleHlsOutput(mediaRoot) {
   }
 }
 
+/**
+ * Validates the runtime layout and optionally removes stale HLS output.
+ * @param {object} config - Runtime configuration object.
+ * @returns {{mediaRoot: string, cleanedStaleOutput: boolean}} Validation summary for startup logging.
+ */
 function validateRuntime(config) {
   // Startup-time validation is where we fail fast on missing config or an unsafe HLS root.
   assertRequiredConfig(config);
@@ -60,6 +80,11 @@ function validateRuntime(config) {
   };
 }
 
+/**
+ * Produces the small runtime summary exposed by the backend status endpoint.
+ * @param {object} config - Runtime configuration object.
+ * @returns {object} A safe-to-expose summary of URLs, ports, HLS settings, and binaries.
+ */
 function getRuntimeSummary(config) {
   // This is the small, safe slice of config we expose through the status endpoint.
   return {

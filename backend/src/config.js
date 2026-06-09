@@ -12,6 +12,13 @@ const DEFAULTS = {
   mediaRootRelative: path.join("media", "live"),
 };
 
+/**
+ * Reads a trimmed string from the environment, falling back when it is empty.
+ * @param {Record<string, string | undefined>} env - Environment-like key/value source.
+ * @param {string} key - Environment variable name.
+ * @param {string} fallback - Value to use when the variable is missing or blank.
+ * @returns {string} The configured string value.
+ */
 function readString(env, key, fallback) {
   const value = env[key];
   if (value === undefined || value === null || value.trim() === "") {
@@ -21,6 +28,13 @@ function readString(env, key, fallback) {
   return value.trim();
 }
 
+/**
+ * Reads and validates a TCP port from the environment.
+ * @param {Record<string, string | undefined>} env - Environment-like key/value source.
+ * @param {string} key - Environment variable name.
+ * @param {number} fallback - Default port to use when the variable is absent.
+ * @returns {number} A valid integer port between 1 and 65535.
+ */
 function readPort(env, key, fallback) {
   const rawValue = readString(env, key, String(fallback));
   const value = Number(rawValue);
@@ -32,6 +46,13 @@ function readPort(env, key, fallback) {
   return value;
 }
 
+/**
+ * Reads a boolean-like environment value using common true/false synonyms.
+ * @param {Record<string, string | undefined>} env - Environment-like key/value source.
+ * @param {string} key - Environment variable name.
+ * @param {boolean} fallback - Default boolean to use when the variable is absent.
+ * @returns {boolean} The parsed boolean value.
+ */
 function readBoolean(env, key, fallback) {
   const rawValue = readString(env, key, fallback ? "true" : "false").toLowerCase();
 
@@ -46,6 +67,12 @@ function readBoolean(env, key, fallback) {
   throw new Error(`${key} must be true or false.`);
 }
 
+/**
+ * Normalizes an http or https URL so other code can safely append paths to it.
+ * @param {string} value - URL string to validate and normalize.
+ * @param {string} key - Configuration key name used in error messages.
+ * @returns {string} A normalized base URL without trailing slash, query, or hash.
+ */
 function normalizeBaseUrl(value, key) {
   let url;
 
@@ -67,6 +94,13 @@ function normalizeBaseUrl(value, key) {
   return url.toString().replace(/\/$/, "");
 }
 
+/**
+ * Normalizes a media-service URL while allowing a caller-defined protocol list.
+ * @param {string} value - URL string to validate and normalize.
+ * @param {string} key - Configuration key name used in error messages.
+ * @param {string[]} allowedProtocols - Protocols that are allowed for this URL.
+ * @returns {string} A normalized base URL without trailing slash, query, or hash.
+ */
 function normalizeMediaBaseUrl(value, key, allowedProtocols) {
   let url;
 
@@ -87,6 +121,12 @@ function normalizeMediaBaseUrl(value, key, allowedProtocols) {
   return url.toString().replace(/\/$/, "");
 }
 
+/**
+ * Builds the runtime configuration object used across the backend.
+ * @param {Record<string, string | undefined>} [env=process.env] - Source of environment variables.
+ * @param {object} [options={}] - Optional overrides such as the backend root directory.
+ * @returns {object} A normalized configuration object for ports, base URLs, and binaries.
+ */
 function createRuntimeConfig(env = process.env, options = {}) {
   // Build one normalized config object so the rest of the backend does not need to
   // know about raw env variables or string parsing rules.

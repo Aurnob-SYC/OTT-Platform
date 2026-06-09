@@ -3,6 +3,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+/**
+ * Removes inline `#` comments from an env value while respecting quoted text.
+ * @param {string} value - Raw value text from the right-hand side of a `key=value` line.
+ * @returns {string} The value with any trailing inline comment removed and whitespace trimmed.
+ */
 function stripInlineComment(value) {
   let inSingleQuote = false;
   let inDoubleQuote = false;
@@ -32,6 +37,11 @@ function stripInlineComment(value) {
   return value.trim();
 }
 
+/**
+ * Removes matching outer quotes from a string value.
+ * @param {string} value - A possibly quoted string value.
+ * @returns {string} The unquoted value when the outer quotes match, otherwise the original value.
+ */
 function unquote(value) {
   if (
     (value.startsWith('"') && value.endsWith('"')) ||
@@ -43,6 +53,11 @@ function unquote(value) {
   return value;
 }
 
+/**
+ * Parses the contents of a `.env` file into a simple object.
+ * @param {string} contents - Entire file contents read from disk.
+ * @returns {Record<string, string>} Parsed environment variable values.
+ */
 function parseEnvFile(contents) {
   const values = {};
 
@@ -70,6 +85,12 @@ function parseEnvFile(contents) {
   return values;
 }
 
+/**
+ * Loads a `.env` file into an environment object without overwriting existing keys.
+ * @param {string} [filePath=path.join(__dirname, "..", ".env")] - Location of the env file to read.
+ * @param {Record<string, string | undefined>} [targetEnv=process.env] - Environment object to populate.
+ * @returns {{loaded: boolean, path: string, values: Record<string, string>}} Load status and parsed values.
+ */
 function loadEnvFile(filePath = path.join(__dirname, "..", ".env"), targetEnv = process.env) {
   if (!fs.existsSync(filePath)) {
     // Missing .env is normal; the backend can still run from shell environment variables alone.

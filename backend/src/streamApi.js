@@ -24,6 +24,9 @@ const { waitForMediaMtxPathMediaFlow } = require("./mediaMtx");
 const DEFAULT_RENDITIONS = Object.freeze(["360p", "480p", "720p"]);
 const SUPPORTED_RENDITIONS = new Set(Object.keys(RENDITION_DEFINITIONS));
 
+/**
+ * Error type used to carry HTTP status codes and API error codes through the router.
+ */
 class ApiError extends Error {
   constructor(statusCode, code, message) {
     super(message);
@@ -33,18 +36,42 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Creates a 400-level API error for invalid client input.
+ * @param {string} message - Human-readable explanation of the problem.
+ * @param {string} [code="BAD_REQUEST"] - Machine-readable API error code.
+ * @returns {ApiError} A ready-to-throw API error instance.
+ */
 function badRequest(message, code = "BAD_REQUEST") {
   return new ApiError(400, code, message);
 }
 
+/**
+ * Creates a 404-level API error for missing resources.
+ * @param {string} message - Human-readable explanation of the missing resource.
+ * @param {string} [code="NOT_FOUND"] - Machine-readable API error code.
+ * @returns {ApiError} A ready-to-throw API error instance.
+ */
 function notFound(message, code = "NOT_FOUND") {
   return new ApiError(404, code, message);
 }
 
+/**
+ * Creates a 409-level API error for state conflicts and invalid transitions.
+ * @param {string} message - Human-readable explanation of the conflict.
+ * @param {string} [code="INVALID_STATE"] - Machine-readable API error code.
+ * @returns {ApiError} A ready-to-throw API error instance.
+ */
 function conflict(message, code = "INVALID_STATE") {
   return new ApiError(409, code, message);
 }
 
+/**
+ * Reads an optional field and coerces it to a string when present.
+ * @param {object} body - Request body or query object.
+ * @param {string} key - Field name to read.
+ * @returns {string | undefined} The string value, or undefined when the field is missing.
+ */
 function readOptionalString(body, key) {
   const value = body ? body[key] : undefined;
   if (value === undefined || value === null) {
@@ -54,6 +81,13 @@ function readOptionalString(body, key) {
   return String(value);
 }
 
+/**
+ * Reads an optional boolean field and validates that it is actually a boolean.
+ * @param {object} body - Request body or query object.
+ * @param {string} key - Field name to read.
+ * @param {boolean} [fallback=false] - Value to return when the field is missing.
+ * @returns {boolean} The parsed boolean or the fallback value.
+ */
 function readOptionalBoolean(body, key, fallback = false) {
   const value = body ? body[key] : undefined;
   if (value === undefined || value === null) {
@@ -67,6 +101,12 @@ function readOptionalBoolean(body, key, fallback = false) {
   throw badRequest(`${key} must be true or false.`);
 }
 
+/**
+ * Reads a required string field and rejects empty values.
+ * @param {object} body - Request body or query object.
+ * @param {string} key - Field name to read.
+ * @returns {string} A trimmed, non-empty string.
+ */
 function readRequiredString(body, key) {
   const value = readOptionalString(body, key);
   if (value === undefined || value.trim() === "") {
@@ -76,6 +116,11 @@ function readRequiredString(body, key) {
   return value.trim();
 }
 
+/**
+ * Reads and validates the renditions array from an API request.
+ * @param {object} body - Request body or query object.
+ * @returns {string[]} A validated list of supported rendition names.
+ */
 function readRenditions(body) {
   const value = body ? body.renditions : undefined;
   if (value === undefined) {
@@ -100,6 +145,12 @@ function readRenditions(body) {
   return renditions;
 }
 
+/**
+ * Loads the current stream status and converts missing-stream errors into API errors.
+ * @param {object} streamStore - Stream store used to fetch the stream record.
+ * @param {string} streamId - Stream identifier to look up.
+ * @returns {object} The current stream status.
+ */
 function requireStreamStatus(streamStore, streamId) {
   try {
     return streamStore.getStream(streamId);
@@ -112,6 +163,11 @@ function requireStreamStatus(streamStore, streamId) {
   }
 }
 
+/**
+ * Validates that a stream identifier matches the platform's allowed format.
+ * @param {string} streamId - The stream identifier to check.
+ * @returns {void}
+ */
 function assertKnownStreamId(streamId) {
   try {
     assertStreamId(streamId);
@@ -120,6 +176,11 @@ function assertKnownStreamId(streamId) {
   }
 }
 
+/**
+ * Verifies that publishing may start from the stream's current state.
+ * @param {object} status - Current stream status.
+ * @returns {void}
+ */
 function ensureCanStartPublishing(status) {
   if (status.state === STREAM_STATES.CREATED || status.state === STREAM_STATES.PUBLISHING) {
     return;
@@ -131,6 +192,11 @@ function ensureCanStartPublishing(status) {
   );
 }
 
+/**
+ * Verifies that the encoder can be started from the stream's current state.
+ * @param {object} status - Current stream status.
+ * @returns {void}
+ */
 function ensureCanStartEncoder(status) {
   if (
     status.state === STREAM_STATES.PUBLISHING ||
@@ -147,6 +213,11 @@ function ensureCanStartEncoder(status) {
   );
 }
 
+/**
+ * Verifies that a viewer session can be opened for the current stream state.
+ * @param {object} status - Current stream status.
+ * @returns {void}
+ */
 function ensureCanView(status) {
   if (status.state === STREAM_STATES.LIVE && status.output.readiness.ready) {
     return;
@@ -165,6 +236,11 @@ function ensureCanView(status) {
   );
 }
 
+/**
+ * Builds a human-readable explanation for why FFmpeg exited.
+ * @param {object} event - Encoder exit event emitted by the worker manager.
+ * @returns {string} A short message describing the exit reason.
+ */
 function buildEncoderExitMessage(event) {
   if (event.error && event.error.message) {
     return event.error.message;
@@ -177,6 +253,17 @@ function buildEncoderExitMessage(event) {
   return `FFmpeg exited with code ${event.exitCode}.`;
 }
 
+/**
+ * Creates the Express router and supporting managers for stream, encoder, and viewer APIs.
+ * @param {object} config - Runtime configuration for the platform.
+ * @param {object} [options={}] - Optional dependency injection and store overrides.
+ * @returns {{
+ *   router: import("express").Router,
+ *   encoderManager: object,
+ *   streamStore: object,
+ *   viewerSessionStore: object
+ * }} The API surface used by the HTTP server.
+ */
 function createStreamApi(config, options = {}) {
   const streamStore = options.streamStore || createStreamStore(config, options.streamStoreOptions);
   const viewerSessionStore =
@@ -253,6 +340,11 @@ function createStreamApi(config, options = {}) {
   const mediaMtxPathWaiter = options.mediaMtxPathWaiter || waitForMediaMtxPathMediaFlow;
   const router = express.Router();
 
+  /**
+   * Re-checks HLS readiness and promotes an encoding stream to live when playlists appear.
+   * @param {object} status - Current stream status to refresh.
+   * @returns {object} The original or updated stream status.
+   */
   function refreshHlsReadiness(status) {
     if (status.state !== STREAM_STATES.ENCODING && status.state !== STREAM_STATES.LIVE) {
       return status;
@@ -273,10 +365,19 @@ function createStreamApi(config, options = {}) {
     return streamStore.updateOutputReadiness(status.streamId, readiness);
   }
 
+  /**
+   * Reloads a stream by id and refreshes its HLS readiness before returning it.
+   * @param {string} streamId - The stream identifier to refresh.
+   * @returns {object} The refreshed stream status.
+   */
   function refreshStreamStatus(streamId) {
     return refreshHlsReadiness(requireStreamStatus(streamStore, streamId));
   }
 
+  /**
+   * Refreshes HLS readiness for every currently active stream.
+   * @returns {void}
+   */
   function refreshActiveStreamReadiness() {
     const listing = streamStore.listStreams({ includeRecentlyActive: false });
 
@@ -534,6 +635,12 @@ function createStreamApi(config, options = {}) {
   };
 }
 
+/**
+ * Converts backend errors into consistent JSON HTTP responses.
+ * @param {unknown} error - Error thrown from a route handler.
+ * @param {import("express").Response} response - Express response object used to send the error.
+ * @returns {void}
+ */
 function sendApiError(error, response) {
   if (error instanceof ApiError) {
     response.status(error.statusCode).json({

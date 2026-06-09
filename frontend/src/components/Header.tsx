@@ -12,9 +12,9 @@ export function Header({ liveCount, totalCount, viewerCount }: HeaderProps) {
           <span />
         </div>
         <div>
-          <p className="product-kicker">Chapter 1 LAN live streaming</p>
+          <p className="product-kicker">LAN live streaming</p>
           <h1>
-            Stream<span>Flow</span>
+            Crafts<span>men</span>
           </h1>
         </div>
       </div>
