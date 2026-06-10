@@ -14,7 +14,7 @@ const {
   logStreamLifecycle,
 } = require("./observability");
 const { STREAM_STATES, createStreamStore } = require("./streams");
-const { assertStreamId } = require("./urlBuilders");
+const { assertStreamId, buildWhepPlaybackUrl } = require("./urlBuilders");
 const {
   assertViewerId,
   createViewerSessionStore,
@@ -234,6 +234,26 @@ function ensureCanView(status) {
     `Cannot start viewer session for stream ${status.streamId} while it is ${status.state}.`,
     "STREAM_NOT_PLAYABLE",
   );
+}
+
+/**
+ * Builds the normal and ops playback URLs for a viewer session.
+ * @param {object} config - Runtime configuration used to derive playback URLs.
+ * @param {string} streamId - Stream identifier for the selected stream.
+ * @param {string} normalPlaybackUrl - Existing HLS playback URL for the stream.
+ * @returns {{normal: {type: string, url: string}, ops: {type: string, url: string}}} Playback URLs for both modes.
+ */
+function buildViewerPlayback(config, streamId, normalPlaybackUrl) {
+  return {
+    normal: {
+      type: "hls",
+      url: normalPlaybackUrl,
+    },
+    ops: {
+      type: "webrtc",
+      url: buildWhepPlaybackUrl(config, streamId),
+    },
+  };
 }
 
 /**
@@ -574,6 +594,7 @@ function createStreamApi(config, options = {}) {
         streamId,
         previousStreamId: result.previous ? result.previous.streamId : null,
         playbackUrl: stream.output.playbackUrl,
+        playback: buildViewerPlayback(config, streamId, stream.output.playbackUrl),
         session: result.session,
       });
     } catch (error) {
@@ -598,6 +619,9 @@ function createStreamApi(config, options = {}) {
         viewerId,
         streamId: session ? session.streamId : null,
         playbackUrl: session ? session.playbackUrl : null,
+        playback: session
+          ? buildViewerPlayback(config, session.streamId, session.playbackUrl)
+          : null,
         session,
       });
     } catch (error) {

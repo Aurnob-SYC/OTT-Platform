@@ -586,6 +586,13 @@ test("starts, replaces, and clears one active stream per viewer session", async 
     assert.equal(first.body.success, true);
     assert.equal(first.body.previousStreamId, null);
     assert.equal(first.body.playbackUrl, "http://192.168.1.25/hls/stream-alpha/master.m3u8");
+    assert.equal(first.body.playback.normal.type, "hls");
+    assert.equal(first.body.playback.normal.url, "http://192.168.1.25/hls/stream-alpha/master.m3u8");
+    assert.equal(first.body.playback.ops.type, "webrtc");
+    assert.equal(
+      first.body.playback.ops.url,
+      "http://192.168.1.25:8889/live/stream-alpha/whep",
+    );
 
     const reportedFirst = await requestJson(
       address.port,
@@ -600,6 +607,16 @@ test("starts, replaces, and clears one active stream per viewer session", async 
       reportedFirst.body.playbackUrl,
       "http://192.168.1.25/hls/stream-alpha/master.m3u8",
     );
+    assert.equal(reportedFirst.body.playback.normal.type, "hls");
+    assert.equal(
+      reportedFirst.body.playback.normal.url,
+      "http://192.168.1.25/hls/stream-alpha/master.m3u8",
+    );
+    assert.equal(reportedFirst.body.playback.ops.type, "webrtc");
+    assert.equal(
+      reportedFirst.body.playback.ops.url,
+      "http://192.168.1.25:8889/live/stream-alpha/whep",
+    );
 
     const replaced = await requestJson(address.port, "POST", "/api/viewer/session", {
       viewerId: "viewer-1",
@@ -609,6 +626,13 @@ test("starts, replaces, and clears one active stream per viewer session", async 
     assert.equal(replaced.statusCode, 200);
     assert.equal(replaced.body.previousStreamId, "stream-alpha");
     assert.equal(replaced.body.session.streamId, "stream-beta");
+    assert.equal(replaced.body.playback.normal.type, "hls");
+    assert.equal(replaced.body.playback.normal.url, "http://192.168.1.25/hls/stream-beta/master.m3u8");
+    assert.equal(replaced.body.playback.ops.type, "webrtc");
+    assert.equal(
+      replaced.body.playback.ops.url,
+      "http://192.168.1.25:8889/live/stream-beta/whep",
+    );
 
     const reportedReplaced = await requestJson(
       address.port,
@@ -621,6 +645,16 @@ test("starts, replaces, and clears one active stream per viewer session", async 
     assert.equal(
       reportedReplaced.body.playbackUrl,
       "http://192.168.1.25/hls/stream-beta/master.m3u8",
+    );
+    assert.equal(reportedReplaced.body.playback.normal.type, "hls");
+    assert.equal(
+      reportedReplaced.body.playback.normal.url,
+      "http://192.168.1.25/hls/stream-beta/master.m3u8",
+    );
+    assert.equal(reportedReplaced.body.playback.ops.type, "webrtc");
+    assert.equal(
+      reportedReplaced.body.playback.ops.url,
+      "http://192.168.1.25:8889/live/stream-beta/whep",
     );
 
     const notPlayable = await requestJson(address.port, "POST", "/api/viewer/session", {
@@ -648,6 +682,7 @@ test("starts, replaces, and clears one active stream per viewer session", async 
     assert.equal(reportedCleared.statusCode, 200);
     assert.equal(reportedCleared.body.streamId, null);
     assert.equal(reportedCleared.body.playbackUrl, null);
+    assert.equal(reportedCleared.body.playback, null);
     assert.equal(reportedCleared.body.session, null);
 
     await requestJson(address.port, "POST", "/api/viewer/session", {

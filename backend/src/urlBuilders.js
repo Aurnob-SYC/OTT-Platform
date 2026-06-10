@@ -72,6 +72,16 @@ function buildPlaybackUrl(config, streamId) {
 }
 
 /**
+ * Builds the MediaMTX WHEP playback URL for a stream.
+ * @param {object} config - Runtime configuration containing MediaMTX base URLs.
+ * @param {string} streamId - Stream identifier to convert into a WHEP URL.
+ * @returns {string} The WebRTC playback URL used by ops viewers.
+ */
+function buildWhepPlaybackUrl(config, streamId) {
+  return appendPath(config.mediaMtx.webRtcBaseUrl, ["live", streamId, "whep"]);
+}
+
+/**
  * Builds the on-disk HLS output directory for one stream.
  * @param {object} config - Runtime configuration containing the media root path.
  * @param {string} streamId - Stream identifier to convert into a filesystem path.
@@ -119,4 +129,5 @@ module.exports = {
   buildStreamHlsOutputDir,
   buildStreamUrls,
   buildWhipUrl,
+  buildWhepPlaybackUrl,
 };

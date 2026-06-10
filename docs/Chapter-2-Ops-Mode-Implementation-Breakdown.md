@@ -8,14 +8,38 @@ Goal: Return both the normal HLS playback URL and the ops WebRTC playback URL fo
 
 Implementation steps:
 
-1. Update the viewer session response shape to include a `playback` object with `normal` and `ops` entries.
-2. Keep the existing HLS URL under `playback.normal.url`.
-3. Build the WHEP URL from the same `streamId` under `playback.ops.url`.
-4. Keep the backend responsible only for URL construction and session state, not media delivery.
+1. Update the viewer session routes in `backend/src/streamApi.js` so `POST /api/viewer/session` and `GET /api/viewer/session` return a `playback` object instead of a single `playbackUrl`.
+2. Keep the existing HLS URL under `playback.normal.url` and label it with `playback.normal.type: "hls"`.
+3. Build the ops playback URL from the same `streamId` under `playback.ops.url` and label it with `playback.ops.type: "webrtc"`.
+4. Preserve the existing session fields that identify the viewer and selected stream, including `viewerId`, `streamId`, `previousStreamId`, and `session`.
+5. Update the viewer session store only as needed to keep session state coherent; the backend should continue to construct URLs and store session state, not proxy HLS or WebRTC media.
+6. Keep the normal playback URL format aligned with Chapter 1: `http://<server-lan-ip>/hls/<streamId>/master.m3u8`.
+7. Keep the ops playback URL format aligned with Chapter 2: `https://<server-lan-ip>:8889/live/<streamId>/whep`.
+
+Example response:
+
+```json
+{
+  "success": true,
+  "viewerId": "viewer-1",
+  "streamId": "stream-abc",
+  "previousStreamId": null,
+  "playback": {
+    "normal": {
+      "type": "hls",
+      "url": "http://<server-lan-ip>/hls/stream-abc/master.m3u8"
+    },
+    "ops": {
+      "type": "webrtc",
+      "url": "https://<server-lan-ip>:8889/live/stream-abc/whep"
+    }
+  }
+}
+```
 
 Done when:
 
-- The viewer session API returns both URLs for the same stream.
+- The viewer session API returns both URLs for the same stream in the `playback` object.
 - The backend still does not proxy HLS or WebRTC media.
 
 ## Part 2: Viewer mode toggle
