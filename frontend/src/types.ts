@@ -15,6 +15,8 @@ export type PublisherState =
   | 'stopped'
   | 'failed'
 
+export type ViewerPlaybackMode = 'normal' | 'ops'
+
 export interface LiveStream {
   bitrate: string
   creator: string

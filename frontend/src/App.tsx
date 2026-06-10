@@ -10,7 +10,7 @@ import {
   startViewerSession,
   stopViewerSession,
 } from './services/backendApi'
-import type { BackendStreamStatus, LiveStream, WatchSession } from './types'
+import type { BackendStreamStatus, LiveStream, ViewerPlaybackMode, WatchSession } from './types'
 
 const VIEWER_ID = 'viewer-1'
 const STREAM_REFRESH_MS = 5000
@@ -58,6 +58,7 @@ function mapBackendStreamToLiveStream(stream: BackendStreamStatus): LiveStream {
 function App() {
   const [isRefreshingStreams, setIsRefreshingStreams] = useState(false)
   const [session, setSession] = useState<WatchSession | undefined>()
+  const [playbackMode, setPlaybackMode] = useState<ViewerPlaybackMode>('normal')
   const [streamListError, setStreamListError] = useState<string>()
   const [backendStreams, setBackendStreams] = useState<BackendStreamStatus[]>([])
   const [streams, setStreams] = useState<LiveStream[]>([])
@@ -222,8 +223,10 @@ function App() {
             streams={streams}
           />
           <SessionPanel
+            onPlaybackModeChange={setPlaybackMode}
             onPlaybackStateChange={updatePlaybackState}
             onStop={stopWatchSession}
+            playbackMode={playbackMode}
             session={session}
             stream={selectedStream}
           />

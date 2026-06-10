@@ -698,6 +698,19 @@ http://127.0.0.1/hls/stream-alpha/master.m3u8
 
 That means the backend remembers what the viewer selected, but nginx still serves the actual HLS files.
 
+## Viewer Playback Mode
+
+A viewer playback mode is the choice between two ways of watching the same live stream.
+
+In Chapter 2, the viewer page keeps the selected `streamId` separate from the playback mode:
+
+- `normal` mode uses the existing HLS path.
+- `ops` mode will later use the lower-latency WebRTC path.
+
+This separation matters because the viewer should be able to change how it watches a stream without accidentally selecting a different stream.
+
+For example, if the viewer is already watching `stream-alpha`, switching from normal to ops mode should keep `stream-alpha` selected. Only the playback method changes.
+
 ## Browser HLS Player
 
 A browser HLS player is the frontend code that loads a `master.m3u8` URL and asks the browser to play it.

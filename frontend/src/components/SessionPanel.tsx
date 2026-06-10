@@ -1,19 +1,23 @@
 import { useEffect, useRef } from 'react'
 import { attachHlsStream, type HlsPlayerHandle } from '../services/hlsPlayer'
-import type { LiveStream, WatchSession } from '../types'
+import type { LiveStream, ViewerPlaybackMode, WatchSession } from '../types'
 import { EmptyState } from './StreamsPanel'
 import { Panel } from './Panel'
 
 interface SessionPanelProps {
+  onPlaybackModeChange: (mode: ViewerPlaybackMode) => void
   onPlaybackStateChange: (state: WatchSession['playbackState'], errorMessage?: string) => void
   onStop: () => void
+  playbackMode: ViewerPlaybackMode
   session?: WatchSession
   stream?: LiveStream
 }
 
 export function SessionPanel({
+  onPlaybackModeChange,
   onPlaybackStateChange,
   onStop,
+  playbackMode,
   session,
   stream,
 }: SessionPanelProps) {
@@ -58,6 +62,28 @@ export function SessionPanel({
         <EmptyState title="Not watching" message="Select a live stream to start a viewer session." />
       ) : (
         <div className="viewer-session">
+          <div className="mode-toggle" role="group" aria-label="Viewer playback mode">
+            <span className="mode-toggle-label">Playback mode</span>
+            <div className="mode-toggle-buttons">
+              <button
+                aria-pressed={playbackMode === 'normal'}
+                className={`mode-toggle-button ${playbackMode === 'normal' ? 'active' : ''}`}
+                onClick={() => onPlaybackModeChange('normal')}
+                type="button"
+              >
+                Normal
+              </button>
+              <button
+                aria-pressed={playbackMode === 'ops'}
+                className={`mode-toggle-button ${playbackMode === 'ops' ? 'active' : ''}`}
+                onClick={() => onPlaybackModeChange('ops')}
+                type="button"
+              >
+                Ops
+              </button>
+            </div>
+          </div>
+
           <div className="viewer-player-shell">
             <video
               aria-label={`Viewer playback for ${stream.title}`}
@@ -77,6 +103,7 @@ export function SessionPanel({
             <InfoRow label="Stream ID" value={stream.id} mono />
             <InfoRow label="MediaMTX path" value={stream.mediaMtxPath} mono />
             <InfoRow label="HLS output" value={stream.hlsOutput} mono />
+            <InfoRow label="Mode" value={playbackMode === 'normal' ? 'Normal' : 'Ops'} accent />
             <InfoRow label="Playback URL" value={session.playbackUrl || stream.playbackUrl} accent mono />
             <InfoRow
               label="Session state"
