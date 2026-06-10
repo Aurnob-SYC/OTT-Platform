@@ -17,6 +17,16 @@ export type PublisherState =
 
 export type ViewerPlaybackMode = 'normal' | 'ops'
 
+export interface PlaybackSource {
+  type: 'hls' | 'webrtc'
+  url: string
+}
+
+export interface ViewerPlaybackSet {
+  normal: PlaybackSource
+  ops: PlaybackSource
+}
+
 export interface LiveStream {
   bitrate: string
   creator: string
@@ -34,8 +44,8 @@ export interface LiveStream {
 
 export interface WatchSession {
   errorMessage?: string
+  playback?: ViewerPlaybackSet
   playbackState: 'loading' | 'ready' | 'playing' | 'stopped' | 'stream-unavailable' | 'playback-error'
-  playbackUrl: string
   streamId: string
 }
 

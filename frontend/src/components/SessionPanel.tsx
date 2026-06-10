@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { attachHlsStream, type HlsPlayerHandle } from '../services/hlsPlayer'
+import { attachWhepStream, type WhepPlayerHandle } from '../services/whepPlayer'
 import type { LiveStream, ViewerPlaybackMode, WatchSession } from '../types'
 import { EmptyState } from './StreamsPanel'
 import { Panel } from './Panel'
@@ -21,26 +22,41 @@ export function SessionPanel({
   session,
   stream,
 }: SessionPanelProps) {
-  const playerRef = useRef<HlsPlayerHandle | null>(null)
+  const playerRef = useRef<HlsPlayerHandle | WhepPlayerHandle | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const selectedStreamId = stream?.id
+  const activePlayback = session?.playback?.[playbackMode] ?? null
+  const activePlaybackUrl = activePlayback?.url ?? null
+  const activePlaybackType = activePlayback?.type ?? null
+  const selectedStreamId = stream?.id ?? null
 
   useEffect(() => {
     playerRef.current?.stop()
     playerRef.current = null
 
-    if (!session?.playbackUrl || !selectedStreamId || !videoRef.current) {
+    if (!selectedStreamId || !activePlaybackType || !activePlaybackUrl || !videoRef.current) {
       return undefined
     }
 
-    const player = attachHlsStream({
-      onAutoplayBlocked: (message) => onPlaybackStateChange('ready', message),
-      onError: (message) => onPlaybackStateChange('playback-error', message),
-      onPlaying: () => onPlaybackStateChange('playing'),
-      onReady: () => onPlaybackStateChange('ready'),
-      sourceUrl: session.playbackUrl,
-      video: videoRef.current,
-    })
+    onPlaybackStateChange('loading')
+
+    const player =
+      activePlaybackType === 'webrtc'
+        ? attachWhepStream({
+            onAutoplayBlocked: (message) => onPlaybackStateChange('ready', message),
+            onError: (message) => onPlaybackStateChange('playback-error', message),
+            onPlaying: () => onPlaybackStateChange('playing'),
+            onReady: () => onPlaybackStateChange('ready'),
+            sourceUrl: activePlaybackUrl,
+            video: videoRef.current,
+          })
+        : attachHlsStream({
+            onAutoplayBlocked: (message) => onPlaybackStateChange('ready', message),
+            onError: (message) => onPlaybackStateChange('playback-error', message),
+            onPlaying: () => onPlaybackStateChange('playing'),
+            onReady: () => onPlaybackStateChange('ready'),
+            sourceUrl: activePlaybackUrl,
+            video: videoRef.current,
+          })
 
     playerRef.current = player
 
@@ -50,7 +66,7 @@ export function SessionPanel({
         playerRef.current = null
       }
     }
-  }, [onPlaybackStateChange, selectedStreamId, session?.playbackUrl])
+  }, [activePlaybackType, activePlaybackUrl, onPlaybackStateChange, playbackMode, selectedStreamId])
 
   function handlePlay(): void {
     void playerRef.current?.play()
@@ -104,7 +120,12 @@ export function SessionPanel({
             <InfoRow label="MediaMTX path" value={stream.mediaMtxPath} mono />
             <InfoRow label="HLS output" value={stream.hlsOutput} mono />
             <InfoRow label="Mode" value={playbackMode === 'normal' ? 'Normal' : 'Ops'} accent />
-            <InfoRow label="Playback URL" value={session.playbackUrl || stream.playbackUrl} accent mono />
+            <InfoRow
+              label="Playback URL"
+              value={activePlayback?.url || stream.playbackUrl}
+              accent
+              mono
+            />
             <InfoRow
               label="Session state"
               value={`${session.playbackState} - single active stream`}

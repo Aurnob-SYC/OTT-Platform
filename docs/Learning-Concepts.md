@@ -725,6 +725,20 @@ frontend/src/services/hlsPlayer.ts
 
 The important rule is that one viewer session uses one player instance. When the viewer switches from `stream-alpha` to `stream-beta`, the frontend stops and destroys the old HLS player before loading the new playback URL.
 
+## WHEP Player
+
+A WHEP player is the frontend code that reads a WebRTC stream from a URL instead of from an HLS manifest.
+
+In Chapter 2, the ops viewer uses the same selected stream but connects to:
+
+```text
+https://<server-lan-ip>:8889/live/<streamId>/whep
+```
+
+The frontend creates a browser `RTCPeerConnection`, sends a WebRTC offer to MediaMTX, and then attaches the received tracks to the same `<video>` element.
+
+The important rule is still the same: one active player at a time. If the viewer switches from normal mode to ops mode, the HLS player must stop before the WHEP player starts.
+
 ## Player Lifecycle
 
 A player lifecycle is the set of steps for starting, using, and cleaning up a media player.
@@ -738,6 +752,8 @@ For Chapter 1, the viewer lifecycle is:
 5. Stop the player and clear the backend viewer session when the viewer stops watching.
 
 This matters because a live player uses browser memory, network bandwidth, and media buffers. Cleaning up the previous player before switching streams helps enforce the one-active-stream rule.
+
+In Chapter 2, the same idea applies when changing playback mode. The selected stream stays the same, but the player implementation changes from HLS to WHEP or back again.
 
 ## Separation Of Concerns
 

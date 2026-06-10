@@ -1,4 +1,4 @@
-import type { BackendStreamStatus } from '../types'
+import type { BackendStreamStatus, ViewerPlaybackSet } from '../types'
 
 const DEFAULT_API_BASE_URL = '/api'
 
@@ -41,7 +41,7 @@ interface ListStreamsResponse {
 }
 
 interface StartViewerSessionResponse {
-  playbackUrl: string
+  playback: ViewerPlaybackSet
   previousStreamId: string | null
   session: {
     playbackUrl: string

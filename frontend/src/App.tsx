@@ -121,16 +121,16 @@ function App() {
     if (stream.status !== 'live') {
       setSession({
         errorMessage: 'Only live, HLS-ready streams can be played.',
+        playback: undefined,
         playbackState: 'stream-unavailable',
-        playbackUrl: stream.playbackUrl,
         streamId: stream.id,
       })
       return
     }
 
     setSession({
+      playback: undefined,
       playbackState: 'loading',
-      playbackUrl: '',
       streamId: stream.id,
     })
 
@@ -138,15 +138,15 @@ function App() {
       const response = await startViewerSession(VIEWER_ID, stream.id)
 
       setSession({
+        playback: response.playback,
         playbackState: 'loading',
-        playbackUrl: response.playbackUrl,
         streamId: response.streamId,
       })
     } catch (error) {
       setSession({
         errorMessage: toUserErrorMessage(error),
+        playback: undefined,
         playbackState: 'stream-unavailable',
-        playbackUrl: stream.playbackUrl,
         streamId: stream.id,
       })
     }
