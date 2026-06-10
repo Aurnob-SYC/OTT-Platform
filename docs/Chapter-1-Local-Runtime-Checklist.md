@@ -91,6 +91,10 @@ The backend treats `live/<streamId>` as the relay boundary and can reference the
 
 ## Startup Order
 
+Use the root server wrapper described in [Chapter-1-Server-Operations.md](./Chapter-1-Server-Operations.md) for the fastest local workflow.
+
+If you want to start things manually, use this order:
+
 1. Start MediaMTX with WebRTC publishing enabled on the LAN.
 2. Start nginx with `config/nginx/chapter-1-hls.conf` or an equivalent `/hls/` alias to `backend/media/live/`.
 3. Start the backend with `npm start` from `backend/`.

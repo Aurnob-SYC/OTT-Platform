@@ -173,6 +173,36 @@ In this project, the publisher browser uses WebRTC to send camera media to Media
 
 WebRTC is useful for live capture because it is designed for low-latency media from browsers.
 
+In Chapter 2, WebRTC is also the planned low-latency playback path for operations users. Instead of waiting for FFmpeg to create HLS segments, an ops browser can read the live MediaMTX path directly:
+
+```text
+Browser camera -> WebRTC -> MediaMTX -> WebRTC -> Ops viewer
+```
+
+That path is faster because it skips HLS segment creation, nginx file delivery, and the HLS player's normal buffer.
+
+## Low-Latency Monitoring
+
+Low-latency monitoring means watching a live feed with as little delay as practical.
+
+For this repo, the normal Chapter 1 viewer uses HLS and may be several seconds behind the camera. That delay is acceptable for regular streaming, but not for an operations team that needs to react quickly.
+
+The Chapter 2 design adds a separate ops viewer that reads directly from MediaMTX over WebRTC. This is intended for two or three local operators, not for a large public audience.
+
+## WHEP
+
+WHEP is a standard way for a browser or client to receive WebRTC media from a server.
+
+In this project, WHIP is used for publishing into MediaMTX, while WHEP can be used for low-latency playback from MediaMTX.
+
+For a stream with ID `stream-alpha`, the WHEP playback endpoint would look like:
+
+```text
+https://<server-lan-ip>:8889/live/stream-alpha/whep
+```
+
+The built-in MediaMTX playback page can be used first to prove the low-latency path before building a custom WHEP player in React.
+
 ## ICE Candidate
 
 An ICE candidate is one network address that WebRTC can try when it is building a connection.

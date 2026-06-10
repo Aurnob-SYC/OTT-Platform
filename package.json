@@ -1,0 +1,11 @@
+{
+  "name": "ott-platform",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "servers:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/manage-servers.ps1 start",
+    "servers:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/manage-servers.ps1 stop",
+    "servers:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/manage-servers.ps1 restart",
+    "servers:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/manage-servers.ps1 status"
+  }
+}

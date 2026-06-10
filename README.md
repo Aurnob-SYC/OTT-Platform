@@ -3,6 +3,17 @@ A live streaming pipeline, a low-latency monitoring feed, an on-demand video ser
 
 ## Quick Setup
 
+### All Servers
+
+```bash
+npm run servers:start
+npm run servers:restart
+npm run servers:stop
+npm run servers:status
+```
+
+See [docs/Chapter-1-Server-Operations.md](docs/Chapter-1-Server-Operations.md) for the runtime details and startup order.
+
 ### Frontend
 
 ```bash
