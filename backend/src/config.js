@@ -10,6 +10,8 @@ const DEFAULTS = {
   mediaMtxRtspPort: 8554,
   nginxPort: 80,
   mediaRootRelative: path.join("media", "live"),
+  archiveRootRelative: path.join("media", "archive"),
+  vodRootRelative: path.join("media", "vod"),
 };
 
 /**
@@ -169,6 +171,22 @@ function createRuntimeConfig(env = process.env, options = {}) {
     ),
     "NGINX_HLS_BASE_URL",
   );
+  const nginxVodBaseUrl = normalizeBaseUrl(
+    readString(
+      env,
+      "NGINX_VOD_BASE_URL",
+      nginxPort === 80 ? `http://${lanHost}/vod` : `http://${lanHost}:${nginxPort}/vod`,
+    ),
+    "NGINX_VOD_BASE_URL",
+  );
+  const archiveRoot = path.resolve(
+    backendRoot,
+    readString(env, "RECORDING_ARCHIVE_ROOT", DEFAULTS.archiveRootRelative),
+  );
+  const vodRoot = path.resolve(
+    backendRoot,
+    readString(env, "VOD_MEDIA_ROOT", DEFAULTS.vodRootRelative),
+  );
 
   return {
     env: readString(env, "NODE_ENV", "development"),
@@ -205,11 +223,20 @@ function createRuntimeConfig(env = process.env, options = {}) {
     },
     nginx: {
       hlsBaseUrl: nginxHlsBaseUrl,
+      vodBaseUrl: nginxVodBaseUrl,
       port: nginxPort,
     },
     hls: {
       mediaRoot,
       cleanStaleOutputOnStart: readBoolean(env, "HLS_CLEAN_STALE_OUTPUT_ON_START", false),
+    },
+    recordings: {
+      archiveRoot,
+      vodRoot,
+      metadataPath: path.resolve(
+        archiveRoot,
+        readString(env, "RECORDING_METADATA_FILE", "recordings.json"),
+      ),
     },
     externalBinaries: {
       mediaMtx: readString(env, "MEDIAMTX_BINARY", "mediamtx"),

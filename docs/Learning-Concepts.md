@@ -418,6 +418,91 @@ live
 
 Segments are easier to serve and cache than one giant video file.
 
+## Archive Recording
+
+An archive recording is the saved source copy of a live stream.
+
+In Chapter 3, a live stream should still produce live HLS for current viewers, but FFmpeg should also save the stream as an `.mkv` file:
+
+```text
+backend/media/archive/<recordingId>/source.mkv
+```
+
+That MKV file is the durable recording. If the VOD HLS files are deleted or need different settings later, the backend can package the MKV again.
+
+## MKV
+
+MKV is a media container format. A container is like a box that holds video, audio, and timing information.
+
+For this repo, MKV is useful for archives because it can store the encoded H.264/AAC stream without being the final browser playback format.
+
+Browsers should not be expected to play the raw MKV file directly. The platform should package the MKV into HLS first.
+
+## VOD
+
+VOD means video on demand.
+
+Live video is watched while it is happening. VOD is recorded video that can be watched later.
+
+In Chapter 3, the planned VOD path is:
+
+```text
+MKV archive -> FFmpeg VOD packaging -> HLS files -> nginx -> browser player
+```
+
+The home page should list recorded videos below the live stream area so a user can choose a recording and play it.
+
+## VOD Packaging
+
+VOD packaging means turning a completed media file into playback files.
+
+For this project, FFmpeg reads:
+
+```text
+backend/media/archive/<recordingId>/source.mkv
+```
+
+and writes:
+
+```text
+backend/media/vod/<recordingId>/master.m3u8
+backend/media/vod/<recordingId>/<rendition>/index.m3u8
+backend/media/vod/<recordingId>/<rendition>/000000.ts
+```
+
+This is different from live HLS because the whole recording already exists. The VOD manifest can be final and stable instead of changing every few seconds.
+
+## Pre-Roll
+
+A pre-roll is a short ad or promotional clip that plays before the main video.
+
+In Chapter 3, the simple version is to package a shared pre-roll clip before the recorded stream. The viewer opens one VOD playback URL, and the manifest makes the ad play first and the recording play after it.
+
+This is enough to understand the basic idea without building a full ad platform.
+
+## SSAI And CSAI
+
+SSAI means server-side ad insertion. The server prepares the stream so ads and content look like one continuous playback item to the player.
+
+CSAI means client-side ad insertion. The browser player decides when to request and play the ad separately from the main content.
+
+Chapter 3 is not a full SSAI or CSAI system. It is closer to a static server-side sequence because the pre-roll is prepared before playback and the player receives one HLS URL.
+
+## Recording Delete
+
+Deleting a recording means removing more than one thing.
+
+For one `recordingId`, the backend should remove:
+
+```text
+backend/media/archive/<recordingId>/
+backend/media/vod/<recordingId>/
+```
+
+It should also remove or hide the recording metadata so the home page no longer lists it.
+
+This delete operation needs a guard: the backend should only delete paths that are safely inside the expected media folders. A bad `recordingId` should never be able to delete unrelated files.
+
 ## nginx
 
 nginx is the web server that should serve HLS files.
