@@ -23,6 +23,7 @@ const nginxRuntimeConfigPath = path.join(
 );
 const repoRoot = path.resolve(__dirname, "..", "..");
 const hlsRoot = path.join(repoRoot, "backend", "media", "live").replace(/\\/g, "/");
+const vodRoot = path.join(repoRoot, "backend", "media", "vod").replace(/\\/g, "/");
 const runtimeIncludePath = path.join(repoRoot, "config", "nginx", "chapter-1-hls.conf").replace(
   /\\/g,
   "/",
@@ -41,6 +42,15 @@ test("nginx HLS config aliases /hls/ to the generated media root", () => {
 
   assert.match(config, /location \/hls\//);
   assert.match(config, new RegExp(`alias ${hlsRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\/`));
+  assert.match(config, /autoindex off;/);
+  assert.doesNotMatch(config, /proxy_pass/);
+});
+
+test("nginx VOD config aliases /vod/ to the generated VOD media root", () => {
+  const config = readNginxConfig();
+
+  assert.match(config, /location \/vod\//);
+  assert.match(config, new RegExp(`alias ${vodRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\/`));
   assert.match(config, /autoindex off;/);
   assert.doesNotMatch(config, /proxy_pass/);
 });
@@ -71,4 +81,16 @@ test("nginx runtime config loads the Chapter 1 HLS server block", () => {
   assert.match(config, /events\s*{/);
   assert.match(config, /http\s*{/);
   assert.match(config, new RegExp(`include ${runtimeIncludePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")};`));
+});
+
+test("nginx VOD config allows stable caching for packaged manifests and segments", () => {
+  const config = readNginxConfig();
+
+  assert.match(config, /location ~ \^\/vod\/\(\.\+\\\.m3u8\)\$/);
+  assert.match(config, /Cache-Control "public, max-age=60"/);
+  assert.match(config, /application\/vnd\.apple\.mpegurl m3u8/);
+
+  assert.match(config, /location ~ \^\/vod\/\(\.\+\\\.ts\)\$/);
+  assert.match(config, /Cache-Control "public, max-age=86400, immutable"/);
+  assert.match(config, /video\/mp2t ts/);
 });

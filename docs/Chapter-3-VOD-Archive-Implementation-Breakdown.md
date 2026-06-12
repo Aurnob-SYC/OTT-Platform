@@ -110,6 +110,15 @@ Done when:
 - `/vod/<recordingId>/master.m3u8` is reachable through nginx.
 - Deleting a recording removes only `backend/media/archive/<recordingId>/` and `backend/media/vod/<recordingId>/`.
 
+Implementation notes:
+
+- `GET /api/recordings` returns visible recordings in the `packaged` state only, so the home page list starts with playable VOD items.
+- `GET /api/recordings/:recordingId` returns one visible recording with its nginx playback URL.
+- `POST /api/recordings/:recordingId/package` remains the retry hook for archived recordings that are no longer actively recording or deleting.
+- `DELETE /api/recordings/:recordingId` marks the recording as deleting, removes the backend-derived archive and VOD directories, then hides the metadata as deleted.
+- Recording delete is blocked while a recording is still `recording`, `finalizing`, or `packaging`.
+- nginx now maps `/vod/` to `backend/media/vod/` beside the existing `/hls/` mapping. Live manifests stay uncached, while VOD manifests and segments use stable cache headers.
+
 ## Part 5: Home page recorded playback
 
 Goal: Add recorded videos below the existing live experience without replacing the Chapter 1 viewer flow.

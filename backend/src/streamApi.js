@@ -16,7 +16,7 @@ const {
   logStreamLifecycle,
 } = require("./observability");
 const { RECORDING_STATES, createRecordingStore } = require("./recordings");
-const { assertRecordingId } = require("./recordingPaths");
+const { assertRecordingId, buildRecordingCleanupTargets } = require("./recordingPaths");
 const { STREAM_STATES, createStreamStore } = require("./streams");
 const { assertStreamId, buildWhepPlaybackUrl } = require("./urlBuilders");
 const { createVodPackagerManager } = require("./vodPackager");
@@ -69,6 +69,16 @@ function notFound(message, code = "NOT_FOUND") {
  */
 function conflict(message, code = "INVALID_STATE") {
   return new ApiError(409, code, message);
+}
+
+/**
+ * Creates a 500-level API error for backend operation failures.
+ * @param {string} message - Human-readable explanation of the failure.
+ * @param {string} [code="INTERNAL_SERVER_ERROR"] - Machine-readable API error code.
+ * @returns {ApiError} A ready-to-throw API error instance.
+ */
+function internalError(message, code = "INTERNAL_SERVER_ERROR") {
+  return new ApiError(500, code, message);
 }
 
 /**
@@ -381,6 +391,22 @@ function buildPackagingExitMessage(event) {
 }
 
 /**
+ * Deletes a directory derived from a backend-controlled recording id.
+ * Missing directories are treated as already clean.
+ * @param {string} directoryPath - Validated directory path to remove.
+ * @returns {{path: string, deleted: boolean}} Cleanup result.
+ */
+function removeRecordingDirectory(directoryPath) {
+  const existed = fs.existsSync(directoryPath);
+  fs.rmSync(directoryPath, { force: true, recursive: true });
+
+  return {
+    path: directoryPath,
+    deleted: existed,
+  };
+}
+
+/**
  * Creates the Express router and supporting managers for stream, encoder, and viewer APIs.
  * @param {object} config - Runtime configuration for the platform.
  * @param {object} [options={}] - Optional dependency injection and store overrides.
@@ -572,6 +598,37 @@ function createStreamApi(config, options = {}) {
         },
       });
     }
+  }
+
+  /**
+   * Loads one visible recording from the store and maps id/store errors to API errors.
+   * @param {string} recordingId - Recording identifier supplied through the route.
+   * @returns {object} Recording metadata.
+   */
+  function requireVisibleRecording(recordingId) {
+    try {
+      assertRecordingId(recordingId);
+    } catch (error) {
+      throw badRequest(error.message, "INVALID_RECORDING_ID");
+    }
+
+    let recording;
+
+    try {
+      recording = recordingStore.getRecording(recordingId);
+    } catch (error) {
+      if (error.message.startsWith("Recording not found:")) {
+        throw notFound(error.message, "RECORDING_NOT_FOUND");
+      }
+
+      throw error;
+    }
+
+    if (recording.visible === false || recording.state === RECORDING_STATES.DELETED) {
+      throw notFound(`Recording not found: ${recordingId}`, "RECORDING_NOT_FOUND");
+    }
+
+    return recording;
   }
 
   /**
@@ -822,25 +879,35 @@ function createStreamApi(config, options = {}) {
     }
   });
 
+  router.get("/recordings", (request, response, next) => {
+    try {
+      const recordings = recordingStore.listRecordings({
+        states: [RECORDING_STATES.PACKAGED],
+      });
+
+      response.status(200).json({
+        recordings,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/recordings/:recordingId", (request, response, next) => {
+    try {
+      const recording = requireVisibleRecording(request.params.recordingId);
+
+      response.status(200).json({
+        recording,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/recordings/:recordingId/package", (request, response, next) => {
     try {
-      try {
-        assertRecordingId(request.params.recordingId);
-      } catch (error) {
-        throw badRequest(error.message, "INVALID_RECORDING_ID");
-      }
-
-      let recording;
-
-      try {
-        recording = recordingStore.getRecording(request.params.recordingId);
-      } catch (error) {
-        if (error.message.startsWith("Recording not found:")) {
-          throw notFound(error.message, "RECORDING_NOT_FOUND");
-        }
-
-        throw error;
-      }
+      const recording = requireVisibleRecording(request.params.recordingId);
 
       if (
         recording.state === RECORDING_STATES.RECORDING ||
@@ -858,6 +925,61 @@ function createStreamApi(config, options = {}) {
       response.status(202).json({
         success: true,
         recording: updated,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/recordings/:recordingId", (request, response, next) => {
+    try {
+      const recording = requireVisibleRecording(request.params.recordingId);
+
+      if (
+        recording.state === RECORDING_STATES.RECORDING ||
+        recording.state === RECORDING_STATES.FINALIZING ||
+        recording.state === RECORDING_STATES.PACKAGING ||
+        recording.state === RECORDING_STATES.DELETING
+      ) {
+        throw conflict(
+          `Cannot delete recording ${recording.recordingId} while it is ${recording.state}.`,
+          "RECORDING_DELETE_NOT_ALLOWED",
+        );
+      }
+
+      const deleting = recordingStore.setRecordingState(
+        recording.recordingId,
+        RECORDING_STATES.DELETING,
+        { error: null },
+      );
+      const targets = buildRecordingCleanupTargets(config, deleting.recordingId);
+
+      let cleanup;
+
+      try {
+        cleanup = {
+          archive: removeRecordingDirectory(targets.archiveDir),
+          vod: removeRecordingDirectory(targets.vodOutputDir),
+        };
+      } catch (error) {
+        recordingStore.setRecordingState(recording.recordingId, RECORDING_STATES.FAILED, {
+          error: {
+            code: "RECORDING_DELETE_FAILED",
+            message: error.message,
+          },
+        });
+        throw internalError(
+          `Could not delete recording ${recording.recordingId}: ${error.message}`,
+          "RECORDING_DELETE_FAILED",
+        );
+      }
+
+      const deleted = recordingStore.hideRecording(recording.recordingId);
+
+      response.status(200).json({
+        success: true,
+        cleanup,
+        recording: deleted,
       });
     } catch (error) {
       next(error);

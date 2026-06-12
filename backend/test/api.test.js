@@ -764,6 +764,153 @@ test("allows retrying VOD packaging for an archived recording through the API", 
   }
 });
 
+test("lists only packaged visible recordings and returns recording detail playback URLs", async () => {
+  const config = createTestConfig();
+  const server = createServer(config, {
+    streamApiOptions: {
+      recordingStoreOptions: {
+        persist: false,
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    server.streamApi.recordingStore.createRecording({
+      recordingId: "rec-packaged",
+      sourceStreamId: "stream-packaged",
+      title: "Playable",
+    });
+    server.streamApi.recordingStore.setRecordingState("rec-packaged", RECORDING_STATES.PACKAGED, {
+      durationSeconds: 63,
+    });
+    server.streamApi.recordingStore.createRecording({
+      recordingId: "rec-packaging",
+      sourceStreamId: "stream-packaging",
+      title: "Still packaging",
+    });
+    server.streamApi.recordingStore.setRecordingState(
+      "rec-packaging",
+      RECORDING_STATES.PACKAGING,
+    );
+    server.streamApi.recordingStore.createRecording({
+      recordingId: "rec-hidden",
+      sourceStreamId: "stream-hidden",
+      title: "Hidden",
+    });
+    server.streamApi.recordingStore.setRecordingState("rec-hidden", RECORDING_STATES.PACKAGED);
+    server.streamApi.recordingStore.hideRecording("rec-hidden");
+
+    const listed = await requestJson(address.port, "GET", "/api/recordings");
+
+    assert.equal(listed.statusCode, 200);
+    assert.deepEqual(listed.body.recordings.map((recording) => recording.recordingId), [
+      "rec-packaged",
+    ]);
+    assert.equal(
+      listed.body.recordings[0].playbackUrl,
+      "http://192.168.1.25/vod/rec-packaged/master.m3u8",
+    );
+
+    const detail = await requestJson(address.port, "GET", "/api/recordings/rec-packaged");
+
+    assert.equal(detail.statusCode, 200);
+    assert.equal(detail.body.recording.recordingId, "rec-packaged");
+    assert.equal(detail.body.recording.state, RECORDING_STATES.PACKAGED);
+    assert.equal(
+      detail.body.recording.playbackUrl,
+      "http://192.168.1.25/vod/rec-packaged/master.m3u8",
+    );
+
+    const hidden = await requestJson(address.port, "GET", "/api/recordings/rec-hidden");
+
+    assert.equal(hidden.statusCode, 404);
+    assert.equal(hidden.body.error, "RECORDING_NOT_FOUND");
+  } finally {
+    await close(server);
+  }
+});
+
+test("deletes one recording archive, VOD files, and visible metadata", async () => {
+  const config = createTestConfig();
+  const server = createServer(config, {
+    streamApiOptions: {
+      recordingStoreOptions: {
+        persist: false,
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    const recording = server.streamApi.recordingStore.createRecording({
+      recordingId: "rec-delete",
+      sourceStreamId: "stream-delete",
+      title: "Delete me",
+    });
+    server.streamApi.recordingStore.setRecordingState("rec-delete", RECORDING_STATES.PACKAGED);
+
+    const otherArchiveDir = path.join(config.recordings.archiveRoot, "rec-keep");
+    const otherVodDir = path.join(config.recordings.vodRoot, "rec-keep");
+    fs.mkdirSync(path.dirname(recording.archivePath), { recursive: true });
+    fs.mkdirSync(recording.vodOutputPath, { recursive: true });
+    fs.mkdirSync(otherArchiveDir, { recursive: true });
+    fs.mkdirSync(otherVodDir, { recursive: true });
+    fs.writeFileSync(recording.archivePath, "archive");
+    fs.writeFileSync(path.join(recording.vodOutputPath, "master.m3u8"), "#EXTM3U\n");
+    fs.writeFileSync(path.join(otherArchiveDir, "source.mkv"), "keep");
+    fs.writeFileSync(path.join(otherVodDir, "master.m3u8"), "#EXTM3U\n");
+
+    const deleted = await requestJson(address.port, "DELETE", "/api/recordings/rec-delete", {});
+
+    assert.equal(deleted.statusCode, 200);
+    assert.equal(deleted.body.success, true);
+    assert.equal(deleted.body.recording.state, RECORDING_STATES.DELETED);
+    assert.equal(deleted.body.recording.visible, false);
+    assert.equal(deleted.body.cleanup.archive.deleted, true);
+    assert.equal(deleted.body.cleanup.vod.deleted, true);
+    assert.equal(fs.existsSync(path.dirname(recording.archivePath)), false);
+    assert.equal(fs.existsSync(recording.vodOutputPath), false);
+    assert.equal(fs.existsSync(path.join(otherArchiveDir, "source.mkv")), true);
+    assert.equal(fs.existsSync(path.join(otherVodDir, "master.m3u8")), true);
+
+    const listed = await requestJson(address.port, "GET", "/api/recordings");
+    assert.deepEqual(listed.body.recordings, []);
+
+    const detail = await requestJson(address.port, "GET", "/api/recordings/rec-delete");
+    assert.equal(detail.statusCode, 404);
+  } finally {
+    await close(server);
+  }
+});
+
+test("rejects deleting a recording while packaging is active", async () => {
+  const config = createTestConfig();
+  const server = createServer(config, {
+    streamApiOptions: {
+      recordingStoreOptions: {
+        persist: false,
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    server.streamApi.recordingStore.createRecording({
+      recordingId: "rec-busy",
+      sourceStreamId: "stream-busy",
+    });
+    server.streamApi.recordingStore.setRecordingState("rec-busy", RECORDING_STATES.PACKAGING);
+
+    const deleted = await requestJson(address.port, "DELETE", "/api/recordings/rec-busy", {});
+
+    assert.equal(deleted.statusCode, 409);
+    assert.equal(deleted.body.error, "RECORDING_DELETE_NOT_ALLOWED");
+  } finally {
+    await close(server);
+  }
+});
+
 test("starts, replaces, and clears one active stream per viewer session", async () => {
   const config = createTestConfig();
   const streamStore = createStreamStore(config);
