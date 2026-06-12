@@ -16,6 +16,13 @@ export type PublisherState =
   | 'failed'
 
 export type ViewerPlaybackMode = 'normal' | 'ops'
+export type PlaybackState =
+  | 'loading'
+  | 'ready'
+  | 'playing'
+  | 'stopped'
+  | 'stream-unavailable'
+  | 'playback-error'
 
 export interface PlaybackSource {
   type: 'hls' | 'webrtc'
@@ -45,9 +52,20 @@ export interface LiveStream {
 export interface WatchSession {
   errorMessage?: string
   playback?: ViewerPlaybackSet
-  playbackState: 'loading' | 'ready' | 'playing' | 'stopped' | 'stream-unavailable' | 'playback-error'
+  playbackState: PlaybackState
+  source: 'live'
   streamId: string
 }
+
+export interface RecordingWatchSession {
+  errorMessage?: string
+  playback?: ViewerPlaybackSet
+  playbackState: PlaybackState
+  recordingId: string
+  source: 'recording'
+}
+
+export type MediaSession = WatchSession | RecordingWatchSession
 
 export type BackendStreamState = 'created' | 'publishing' | 'encoding' | 'live' | 'stopped' | 'failed'
 
@@ -86,4 +104,38 @@ export interface BackendStreamStatus {
     updatedAt: string
   }
   title: string
+}
+
+export type RecordingState =
+  | 'recording'
+  | 'finalizing'
+  | 'packaging'
+  | 'packaged'
+  | 'failed'
+  | 'deleting'
+  | 'deleted'
+
+export interface BackendRecording {
+  archivePath: string
+  createdAt: string
+  deletedAt: string | null
+  deletingAt: string | null
+  durationSeconds: number | null
+  error: {
+    code?: string
+    message: string
+  } | null
+  failedAt: string | null
+  finalizingAt: string | null
+  packagedAt: string | null
+  packagingStartedAt: string | null
+  playbackUrl: string
+  recordingId: string
+  sourceStreamId: string
+  startedAt: string
+  state: RecordingState
+  title: string
+  updatedAt: string
+  visible: boolean
+  vodOutputPath: string
 }

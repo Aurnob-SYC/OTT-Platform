@@ -1,4 +1,4 @@
-import type { BackendStreamStatus, ViewerPlaybackSet } from '../types'
+import type { BackendRecording, BackendStreamStatus, ViewerPlaybackSet } from '../types'
 
 const DEFAULT_API_BASE_URL = '/api'
 
@@ -38,6 +38,15 @@ interface ListStreamsResponse {
   active: BackendStreamStatus[]
   recent: BackendStreamStatus[]
   streams: BackendStreamStatus[]
+}
+
+interface ListRecordingsResponse {
+  recordings: BackendRecording[]
+}
+
+interface DeleteRecordingResponse {
+  recording: BackendRecording
+  success: boolean
 }
 
 interface StartViewerSessionResponse {
@@ -146,6 +155,10 @@ export async function listStreams(): Promise<ListStreamsResponse> {
   return requestJson<ListStreamsResponse>('/streams')
 }
 
+export async function listRecordings(): Promise<ListRecordingsResponse> {
+  return requestJson<ListRecordingsResponse>('/recordings')
+}
+
 export async function startPublishing(
   streamId: string,
   input: StartPublishingInput,
@@ -169,6 +182,12 @@ export async function startEncoder(
 export async function stopStream(streamId: string): Promise<StopStreamResponse> {
   return requestJson<StopStreamResponse>(`/streams/${encodeURIComponent(streamId)}/stop`, {
     method: 'POST',
+  })
+}
+
+export async function deleteRecording(recordingId: string): Promise<DeleteRecordingResponse> {
+  return requestJson<DeleteRecordingResponse>(`/recordings/${encodeURIComponent(recordingId)}`, {
+    method: 'DELETE',
   })
 }
 

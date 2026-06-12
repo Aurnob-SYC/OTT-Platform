@@ -139,6 +139,13 @@ Done when:
 - Recorded playback is visually separate from active live streams.
 - Deleting a recording removes it from the UI and clears the selected recording when needed.
 
+Implementation notes:
+
+- The frontend now fetches packaged recordings from `GET /api/recordings` and renders them in a separate Recorded Videos panel below the live viewer flow.
+- Recorded playback reuses the existing HLS player service through the shared watch session panel, so live and VOD playback do not create competing video player instances.
+- Selecting a recording stops any active live viewer session before loading the recording playback URL.
+- Deleting the currently selected recording clears playback first, calls `DELETE /api/recordings/:recordingId`, and refreshes the recording list after the backend confirms cleanup.
+
 ## Part 6: End-to-end verification and documentation
 
 Goal: Prove Chapter 3 works without regressing Chapter 1 live streaming.

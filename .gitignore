@@ -138,7 +138,7 @@ dist
 !.yarn/versions
 
 # Chapter 1 — HLS media output
-backend/media/live/
+backend/media/
 
 # Vite files
 vite.config.js.timestamp-*

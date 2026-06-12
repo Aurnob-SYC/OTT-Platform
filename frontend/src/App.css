@@ -261,6 +261,11 @@
   color: var(--muted);
 }
 
+.stream-status-tag.packaged {
+  background: color-mix(in oklch, var(--serve) 14%, transparent);
+  color: var(--serve);
+}
+
 .stream-paths {
   display: grid;
   gap: 6px;
@@ -560,11 +565,84 @@
   background: color-mix(in oklch, var(--border) 35%, transparent);
 }
 
+.btn-secondary.danger {
+  border-color: color-mix(in oklch, var(--danger) 42%, var(--border));
+  color: var(--danger);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .btn.compact {
   flex: 0 0 auto;
   min-height: 32px;
   padding: 5px 10px;
   font-size: 0.82rem;
+}
+
+.recording-list {
+  display: grid;
+  gap: 12px;
+}
+
+.recording-row {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.recording-row.active {
+  border-color: var(--serve);
+  box-shadow: 0 0 0 1px var(--serve), 0 12px 26px rgb(0 0 0 / 0.22);
+}
+
+.recording-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recording-main h3 {
+  margin: 0;
+  color: var(--fg);
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.recording-main p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.recording-paths {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.recording-paths span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.recording-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
 .empty-state {
@@ -671,6 +749,8 @@
   }
 
   .button-group,
+  .recording-actions,
+  .recording-main,
   .stream-panel-tools,
   .mode-toggle,
   .operator-strip {

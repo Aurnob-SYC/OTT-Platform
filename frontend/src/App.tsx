@@ -2,15 +2,25 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { Header } from './components/Header'
 import { PublisherPanel } from './components/PublisherPanel'
+import { RecordingsPanel } from './components/RecordingsPanel'
 import { SessionPanel } from './components/SessionPanel'
 import { StreamsPanel } from './components/StreamsPanel'
 import {
   ApiClientError,
+  deleteRecording,
+  listRecordings,
   listStreams,
   startViewerSession,
   stopViewerSession,
 } from './services/backendApi'
-import type { BackendStreamStatus, LiveStream, ViewerPlaybackMode, WatchSession } from './types'
+import type {
+  BackendRecording,
+  BackendStreamStatus,
+  LiveStream,
+  MediaSession,
+  PlaybackState,
+  ViewerPlaybackMode,
+} from './types'
 
 const VIEWER_ID = 'viewer-1'
 const STREAM_REFRESH_MS = 5000
@@ -56,16 +66,30 @@ function mapBackendStreamToLiveStream(stream: BackendStreamStatus): LiveStream {
 }
 
 function App() {
+  const [deletingRecordingId, setDeletingRecordingId] = useState<string>()
   const [isRefreshingStreams, setIsRefreshingStreams] = useState(false)
-  const [session, setSession] = useState<WatchSession | undefined>()
+  const [isRefreshingRecordings, setIsRefreshingRecordings] = useState(false)
+  const [session, setSession] = useState<MediaSession | undefined>()
   const [playbackMode, setPlaybackMode] = useState<ViewerPlaybackMode>('normal')
+  const [recordingListError, setRecordingListError] = useState<string>()
   const [streamListError, setStreamListError] = useState<string>()
   const [backendStreams, setBackendStreams] = useState<BackendStreamStatus[]>([])
+  const [recordings, setRecordings] = useState<BackendRecording[]>([])
   const [streams, setStreams] = useState<LiveStream[]>([])
 
   const selectedStream = useMemo(
-    () => streams.find((stream) => stream.id === session?.streamId),
-    [session?.streamId, streams],
+    () =>
+      session?.source === 'live'
+        ? streams.find((stream) => stream.id === session.streamId)
+        : undefined,
+    [session, streams],
+  )
+  const selectedRecording = useMemo(
+    () =>
+      session?.source === 'recording'
+        ? recordings.find((recording) => recording.recordingId === session.recordingId)
+        : undefined,
+    [recordings, session],
   )
   const hasActiveViewerSession =
     session?.playbackState === 'loading' ||
@@ -91,6 +115,20 @@ function App() {
     }
   }, [])
 
+  const refreshRecordings = useCallback(async (): Promise<void> => {
+    setIsRefreshingRecordings(true)
+
+    try {
+      const response = await listRecordings()
+      setRecordings(response.recordings)
+      setRecordingListError(undefined)
+    } catch (error) {
+      setRecordingListError(toUserErrorMessage(error))
+    } finally {
+      setIsRefreshingRecordings(false)
+    }
+  }, [])
+
   useEffect(() => {
     const initialRefresh = window.setTimeout(() => {
       void refreshStreams()
@@ -104,6 +142,20 @@ function App() {
       window.clearTimeout(initialRefresh)
     }
   }, [refreshStreams])
+
+  useEffect(() => {
+    const initialRefresh = window.setTimeout(() => {
+      void refreshRecordings()
+    }, 0)
+    const interval = window.setInterval(() => {
+      void refreshRecordings()
+    }, STREAM_REFRESH_MS)
+
+    return () => {
+      window.clearInterval(interval)
+      window.clearTimeout(initialRefresh)
+    }
+  }, [refreshRecordings])
 
   useEffect(() => {
     function clearViewerSession(): void {
@@ -123,14 +175,20 @@ function App() {
         errorMessage: 'Only live, HLS-ready streams can be played.',
         playback: undefined,
         playbackState: 'stream-unavailable',
+        source: 'live',
         streamId: stream.id,
       })
       return
     }
 
+    if (session?.source === 'recording') {
+      setSession(undefined)
+    }
+
     setSession({
       playback: undefined,
       playbackState: 'loading',
+      source: 'live',
       streamId: stream.id,
     })
 
@@ -140,6 +198,7 @@ function App() {
       setSession({
         playback: response.playback,
         playbackState: 'loading',
+        source: 'live',
         streamId: response.streamId,
       })
     } catch (error) {
@@ -147,13 +206,14 @@ function App() {
         errorMessage: toUserErrorMessage(error),
         playback: undefined,
         playbackState: 'stream-unavailable',
+        source: 'live',
         streamId: stream.id,
       })
     }
   }
 
   const updatePlaybackState = useCallback(
-    (playbackState: WatchSession['playbackState'], errorMessage?: string): void => {
+    (playbackState: PlaybackState, errorMessage?: string): void => {
       setSession((currentSession) =>
         currentSession
           ? {
@@ -168,8 +228,55 @@ function App() {
   )
 
   async function stopWatchSession(): Promise<void> {
-    await stopViewerSession(VIEWER_ID).catch(() => undefined)
+    if (session?.source === 'live') {
+      await stopViewerSession(VIEWER_ID).catch(() => undefined)
+    }
     setSession(undefined)
+  }
+
+  async function startRecordingPlayback(recording: BackendRecording): Promise<void> {
+    if (session?.source === 'live') {
+      await stopViewerSession(VIEWER_ID).catch(() => undefined)
+    }
+
+    setPlaybackMode('normal')
+    setSession({
+      playback: {
+        normal: {
+          type: 'hls',
+          url: recording.playbackUrl,
+        },
+        ops: {
+          type: 'hls',
+          url: recording.playbackUrl,
+        },
+      },
+      playbackState: 'loading',
+      recordingId: recording.recordingId,
+      source: 'recording',
+    })
+  }
+
+  async function removeRecording(recording: BackendRecording): Promise<void> {
+    if (deletingRecordingId) {
+      return
+    }
+
+    setDeletingRecordingId(recording.recordingId)
+    setRecordingListError(undefined)
+
+    try {
+      if (session?.source === 'recording' && session.recordingId === recording.recordingId) {
+        setSession(undefined)
+      }
+
+      await deleteRecording(recording.recordingId)
+      await refreshRecordings()
+    } catch (error) {
+      setRecordingListError(toUserErrorMessage(error))
+    } finally {
+      setDeletingRecordingId(undefined)
+    }
   }
 
   function upsertBackendStream(stream: BackendStreamStatus): void {
@@ -215,7 +322,7 @@ function App() {
         <div className="side-stack">
           <PublisherPanel onStreamChanged={upsertBackendStream} streams={backendStreams} />
           <StreamsPanel
-            activeStreamId={session?.streamId}
+            activeStreamId={session?.source === 'live' ? session.streamId : undefined}
             errorMessage={streamListError}
             isRefreshing={isRefreshingStreams}
             onRefresh={() => void refreshStreams()}
@@ -227,8 +334,19 @@ function App() {
             onPlaybackStateChange={updatePlaybackState}
             onStop={stopWatchSession}
             playbackMode={playbackMode}
+            recording={selectedRecording}
             session={session}
             stream={selectedStream}
+          />
+          <RecordingsPanel
+            activeRecordingId={session?.source === 'recording' ? session.recordingId : undefined}
+            deletingRecordingId={deletingRecordingId}
+            errorMessage={recordingListError}
+            isRefreshing={isRefreshingRecordings}
+            onDeleteRecording={(recording) => void removeRecording(recording)}
+            onPlayRecording={(recording) => void startRecordingPlayback(recording)}
+            onRefresh={() => void refreshRecordings()}
+            recordings={recordings}
           />
         </div>
 
