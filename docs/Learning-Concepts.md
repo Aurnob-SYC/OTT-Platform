@@ -503,6 +503,29 @@ It should also remove or hide the recording metadata so the home page no longer 
 
 This delete operation needs a guard: the backend should only delete paths that are safely inside the expected media folders. A bad `recordingId` should never be able to delete unrelated files.
 
+## Recording Metadata Store
+
+Recording metadata is the small JSON-friendly record that describes one saved stream.
+
+In Chapter 3, the backend keeps recording records in memory while it is running and writes the list to:
+
+```text
+backend/media/archive/recordings.json
+```
+
+That file stores facts like:
+
+- the `recordingId`
+- the source `streamId`
+- the current recording state
+- the archive MKV path
+- the generated VOD HLS path
+- the nginx playback URL
+
+The media files are still separate. The JSON file does not contain video. It only tells the backend what recordings exist and where their backend-controlled files should be.
+
+This is a learning-friendly step before using a database. Later, the JSON store can be replaced with a database table while keeping the rest of the backend mostly focused on the same create, update, list, and hide operations.
+
 ## nginx
 
 nginx is the web server that should serve HLS files.

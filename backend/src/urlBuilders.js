@@ -122,6 +122,7 @@ function buildStreamUrls(config, streamId) {
 
 module.exports = {
   STREAM_ID_PATTERN,
+  appendPath,
   assertStreamId,
   buildMediaMtxPath,
   buildPlaybackUrl,

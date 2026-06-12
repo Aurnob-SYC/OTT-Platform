@@ -97,7 +97,10 @@ function start() {
   server.listen(config.backend.port, () => {
     console.log(`Backend API listening on ${config.backend.baseUrl}`);
     console.log(`HLS output root: ${validation.mediaRoot}`);
+    console.log(`Recording archive root: ${validation.archiveRoot}`);
+    console.log(`VOD output root: ${validation.vodRoot}`);
     console.log(`nginx HLS base URL: ${config.nginx.hlsBaseUrl}`);
+    console.log(`nginx VOD base URL: ${config.nginx.vodBaseUrl}`);
     console.log(`MediaMTX WebRTC base URL: ${config.mediaMtx.webRtcBaseUrl}`);
   });
 

@@ -27,6 +27,12 @@ Done when:
 - Archive paths and VOD paths are always derived from backend-controlled recording IDs.
 - The design still has a clear future boundary for replacing JSON metadata with a database.
 
+Implementation notes:
+
+- Recording path helpers live in `backend/src/recordingPaths.js`.
+- Recording metadata state lives in `backend/src/recordings.js` and persists to `backend/media/archive/recordings.json` by default.
+- Runtime config now separates live HLS, archive, and VOD roots: `backend/media/live/`, `backend/media/archive/`, and `backend/media/vod/`.
+
 ## Part 2: Live encoder archive output
 
 Goal: Keep the Chapter 1 live HLS path working while saving each live stream as an MKV archive.

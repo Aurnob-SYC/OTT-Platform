@@ -187,6 +187,18 @@ function createRuntimeConfig(env = process.env, options = {}) {
     backendRoot,
     readString(env, "VOD_MEDIA_ROOT", DEFAULTS.vodRootRelative),
   );
+  const recordingMetadataPath = path.resolve(
+    archiveRoot,
+    readString(env, "RECORDING_METADATA_FILE", "recordings.json"),
+  );
+  const normalizedArchiveRoot =
+    process.platform === "win32" ? archiveRoot.toLowerCase() : archiveRoot;
+  const normalizedMetadataPath =
+    process.platform === "win32" ? recordingMetadataPath.toLowerCase() : recordingMetadataPath;
+
+  if (!normalizedMetadataPath.startsWith(`${normalizedArchiveRoot}${path.sep}`)) {
+    throw new Error("RECORDING_METADATA_FILE must resolve inside RECORDING_ARCHIVE_ROOT.");
+  }
 
   return {
     env: readString(env, "NODE_ENV", "development"),
@@ -233,10 +245,7 @@ function createRuntimeConfig(env = process.env, options = {}) {
     recordings: {
       archiveRoot,
       vodRoot,
-      metadataPath: path.resolve(
-        archiveRoot,
-        readString(env, "RECORDING_METADATA_FILE", "recordings.json"),
-      ),
+      metadataPath: recordingMetadataPath,
     },
     externalBinaries: {
       mediaMtx: readString(env, "MEDIAMTX_BINARY", "mediamtx"),

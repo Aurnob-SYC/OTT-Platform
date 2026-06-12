@@ -17,7 +17,11 @@ function assertRequiredConfig(config) {
   if (!config.mediaMtx.apiBaseUrl) missing.push("MEDIAMTX_API_BASE_URL");
   if (!config.mediaMtx.rtspBaseUrl) missing.push("MEDIAMTX_RTSP_BASE_URL");
   if (!config.nginx.hlsBaseUrl) missing.push("NGINX_HLS_BASE_URL");
+  if (!config.nginx.vodBaseUrl) missing.push("NGINX_VOD_BASE_URL");
   if (!config.hls.mediaRoot) missing.push("HLS_MEDIA_ROOT");
+  if (!config.recordings.archiveRoot) missing.push("RECORDING_ARCHIVE_ROOT");
+  if (!config.recordings.vodRoot) missing.push("VOD_MEDIA_ROOT");
+  if (!config.recordings.metadataPath) missing.push("RECORDING_METADATA_FILE");
 
   if (missing.length > 0) {
     throw new Error(`Missing required runtime configuration: ${missing.join(", ")}`);
@@ -69,6 +73,8 @@ function validateRuntime(config) {
   // Startup-time validation is where we fail fast on missing config or an unsafe HLS root.
   assertRequiredConfig(config);
   ensureDirectory(config.hls.mediaRoot);
+  ensureDirectory(config.recordings.archiveRoot);
+  ensureDirectory(config.recordings.vodRoot);
 
   if (config.hls.cleanStaleOutputOnStart) {
     cleanStaleHlsOutput(config.hls.mediaRoot);
@@ -76,6 +82,8 @@ function validateRuntime(config) {
 
   return {
     mediaRoot: path.resolve(config.hls.mediaRoot),
+    archiveRoot: path.resolve(config.recordings.archiveRoot),
+    vodRoot: path.resolve(config.recordings.vodRoot),
     cleanedStaleOutput: config.hls.cleanStaleOutputOnStart,
   };
 }
@@ -97,10 +105,16 @@ function getRuntimeSummary(config) {
       mediaMtxApi: config.mediaMtx.apiBaseUrl,
       mediaMtxRtsp: config.mediaMtx.rtspBaseUrl,
       nginxHls: config.nginx.hlsBaseUrl,
+      nginxVod: config.nginx.vodBaseUrl,
     },
     hls: {
       mediaRoot: path.resolve(config.hls.mediaRoot),
       cleanStaleOutputOnStart: config.hls.cleanStaleOutputOnStart,
+    },
+    recordings: {
+      archiveRoot: path.resolve(config.recordings.archiveRoot),
+      vodRoot: path.resolve(config.recordings.vodRoot),
+      metadataPath: path.resolve(config.recordings.metadataPath),
     },
     externalBinaries: config.externalBinaries,
   };

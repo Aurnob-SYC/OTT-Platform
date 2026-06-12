@@ -13,6 +13,7 @@ const {
   createJsonLogger,
   logStreamLifecycle,
 } = require("./observability");
+const { createRecordingStore } = require("./recordings");
 const { STREAM_STATES, createStreamStore } = require("./streams");
 const { assertStreamId, buildWhepPlaybackUrl } = require("./urlBuilders");
 const {
@@ -286,6 +287,8 @@ function buildEncoderExitMessage(event) {
  */
 function createStreamApi(config, options = {}) {
   const streamStore = options.streamStore || createStreamStore(config, options.streamStoreOptions);
+  const recordingStore =
+    options.recordingStore || createRecordingStore(config, options.recordingStoreOptions);
   const viewerSessionStore =
     options.viewerSessionStore || createViewerSessionStore(options.viewerSessionOptions);
   const logger =
@@ -654,6 +657,7 @@ function createStreamApi(config, options = {}) {
   return {
     router,
     encoderManager,
+    recordingStore,
     streamStore,
     viewerSessionStore,
   };
