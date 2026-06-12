@@ -12,6 +12,7 @@ const DEFAULTS = {
   mediaRootRelative: path.join("media", "live"),
   archiveRootRelative: path.join("media", "archive"),
   vodRootRelative: path.join("media", "vod"),
+  prerollSourceRelative: path.join("media", "ads", "preroll", "source.mp4"),
 };
 
 /**
@@ -191,6 +192,10 @@ function createRuntimeConfig(env = process.env, options = {}) {
     archiveRoot,
     readString(env, "RECORDING_METADATA_FILE", "recordings.json"),
   );
+  const prerollSourcePath = path.resolve(
+    backendRoot,
+    readString(env, "PREROLL_SOURCE_PATH", DEFAULTS.prerollSourceRelative),
+  );
   const normalizedArchiveRoot =
     process.platform === "win32" ? archiveRoot.toLowerCase() : archiveRoot;
   const normalizedMetadataPath =
@@ -244,6 +249,7 @@ function createRuntimeConfig(env = process.env, options = {}) {
     },
     recordings: {
       archiveRoot,
+      prerollSourcePath,
       vodRoot,
       metadataPath: recordingMetadataPath,
     },

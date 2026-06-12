@@ -2,6 +2,7 @@
 
 const express = require("express");
 const fs = require("node:fs");
+const path = require("node:path");
 
 const {
   RENDITION_DEFINITIONS,
@@ -15,8 +16,10 @@ const {
   logStreamLifecycle,
 } = require("./observability");
 const { RECORDING_STATES, createRecordingStore } = require("./recordings");
+const { assertRecordingId } = require("./recordingPaths");
 const { STREAM_STATES, createStreamStore } = require("./streams");
 const { assertStreamId, buildWhepPlaybackUrl } = require("./urlBuilders");
+const { createVodPackagerManager } = require("./vodPackager");
 const {
   assertViewerId,
   createViewerSessionStore,
@@ -323,6 +326,61 @@ function inspectArchiveFile(archivePath) {
 }
 
 /**
+ * Checks whether generated VOD HLS output has a master and rendition playlists.
+ * @param {object} packageStatus - VOD packaging worker status.
+ * @returns {{ok: boolean, error: object | null}} VOD validation result.
+ */
+function inspectVodPackage(packageStatus) {
+  const missing = [];
+
+  for (const relativePath of [
+    "master.m3u8",
+    ...packageStatus.renditions.map((rendition) => `${rendition}/index.m3u8`),
+  ]) {
+    try {
+      const stats = fs.statSync(path.join(packageStatus.outputDir, relativePath));
+      if (stats.size <= 0) {
+        missing.push(relativePath);
+      }
+    } catch {
+      missing.push(relativePath);
+    }
+  }
+
+  if (missing.length === 0) {
+    return {
+      ok: true,
+      error: null,
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "VOD_OUTPUT_MISSING",
+      message: `VOD package is missing expected output: ${missing.join(", ")}.`,
+    },
+  };
+}
+
+/**
+ * Builds a human-readable explanation for why VOD packaging exited.
+ * @param {object} event - Packaging exit event emitted by the VOD worker manager.
+ * @returns {string} A short message describing the exit reason.
+ */
+function buildPackagingExitMessage(event) {
+  if (event.error && event.error.message) {
+    return event.error.message;
+  }
+
+  if (event.exitSignal) {
+    return `FFmpeg VOD packaging exited from signal ${event.exitSignal}.`;
+  }
+
+  return `FFmpeg VOD packaging exited with code ${event.exitCode}.`;
+}
+
+/**
  * Creates the Express router and supporting managers for stream, encoder, and viewer APIs.
  * @param {object} config - Runtime configuration for the platform.
  * @param {object} [options={}] - Optional dependency injection and store overrides.
@@ -423,6 +481,40 @@ function createStreamApi(config, options = {}) {
         }
       },
     });
+  const vodPackagerManager =
+    options.vodPackagerManager ||
+    createVodPackagerManager(config, {
+      ...(options.vodPackagerManagerOptions || {}),
+      onPackagingExit: (event) => {
+        try {
+          if (event.exitCode === 0) {
+            const vodPackage = inspectVodPackage(event);
+
+            if (vodPackage.ok) {
+              recordingStore.setRecordingState(event.recordingId, RECORDING_STATES.PACKAGED, {
+                error: null,
+              });
+              return;
+            }
+
+            recordingStore.setRecordingState(event.recordingId, RECORDING_STATES.FAILED, {
+              error: vodPackage.error,
+            });
+            return;
+          }
+
+          recordingStore.setRecordingState(event.recordingId, RECORDING_STATES.FAILED, {
+            error: {
+              code: "VOD_PACKAGING_FAILED",
+              message: buildPackagingExitMessage(event),
+              stderrTail: event.stderrTail,
+            },
+          });
+        } catch {
+          // Packaging failure handling must stay isolated to the recording that exited.
+        }
+      },
+    });
   const mediaMtxPathWaiter = options.mediaMtxPathWaiter || waitForMediaMtxPathMediaFlow;
   const router = express.Router();
 
@@ -446,11 +538,39 @@ function createStreamApi(config, options = {}) {
         });
       }
 
-      return recordingStore.setRecordingState(recordingId, RECORDING_STATES.FINALIZING, {
+      const finalized = recordingStore.setRecordingState(recordingId, RECORDING_STATES.FINALIZING, {
         error: null,
       });
+      return startVodPackaging(finalized);
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Starts VOD packaging for a finalized or failed recording that still has an archive.
+   * @param {object} recording - Recording metadata to package.
+   * @returns {object} Updated recording metadata.
+   */
+  function startVodPackaging(recording) {
+    const packaging = recordingStore.setRecordingState(
+      recording.recordingId,
+      RECORDING_STATES.PACKAGING,
+      { error: null },
+    );
+
+    try {
+      vodPackagerManager.startPackaging(packaging, {
+        renditions: DEFAULT_RENDITIONS,
+      });
+      return packaging;
+    } catch (error) {
+      return recordingStore.setRecordingState(recording.recordingId, RECORDING_STATES.FAILED, {
+        error: {
+          code: error.code || "VOD_PACKAGING_START_FAILED",
+          message: error.message,
+        },
+      });
     }
   }
 
@@ -702,6 +822,48 @@ function createStreamApi(config, options = {}) {
     }
   });
 
+  router.post("/recordings/:recordingId/package", (request, response, next) => {
+    try {
+      try {
+        assertRecordingId(request.params.recordingId);
+      } catch (error) {
+        throw badRequest(error.message, "INVALID_RECORDING_ID");
+      }
+
+      let recording;
+
+      try {
+        recording = recordingStore.getRecording(request.params.recordingId);
+      } catch (error) {
+        if (error.message.startsWith("Recording not found:")) {
+          throw notFound(error.message, "RECORDING_NOT_FOUND");
+        }
+
+        throw error;
+      }
+
+      if (
+        recording.state === RECORDING_STATES.RECORDING ||
+        recording.state === RECORDING_STATES.DELETING ||
+        recording.state === RECORDING_STATES.DELETED
+      ) {
+        throw conflict(
+          `Cannot package recording ${recording.recordingId} while it is ${recording.state}.`,
+          "RECORDING_PACKAGE_NOT_ALLOWED",
+        );
+      }
+
+      const updated = startVodPackaging(recording);
+
+      response.status(202).json({
+        success: true,
+        recording: updated,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/viewer/session", (request, response, next) => {
     try {
       const viewerId = readRequiredString(request.body, "viewerId");
@@ -790,6 +952,7 @@ function createStreamApi(config, options = {}) {
   return {
     router,
     encoderManager,
+    vodPackagerManager,
     recordingStore,
     streamStore,
     viewerSessionStore,

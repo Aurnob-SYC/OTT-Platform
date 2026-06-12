@@ -500,6 +500,44 @@ In Chapter 3, the simple version is to package a shared pre-roll clip before the
 
 This is enough to understand the basic idea without building a full ad platform.
 
+In this repo, the shared source clip defaults to:
+
+```text
+backend/media/ads/preroll/source.mp4
+```
+
+When a recording is packaged, FFmpeg reads the pre-roll clip first and the archive MKV second. The output still becomes one VOD HLS package under:
+
+```text
+backend/media/vod/<recordingId>/
+```
+
+If the pre-roll file is missing or empty, packaging fails clearly and keeps the MKV archive so the package can be retried later.
+
+## VOD Packaging Worker
+
+A VOD packaging worker is a separate FFmpeg process that works on a completed recording.
+
+The live encoder worker handles active streams. The VOD packaging worker handles finished files. That separation matters because packaging a recording should not disturb live viewers.
+
+For one recording, the worker reads:
+
+```text
+backend/media/archive/<recordingId>/source.mkv
+backend/media/ads/preroll/source.mp4
+```
+
+and writes:
+
+```text
+backend/media/vod/<recordingId>/master.m3u8
+backend/media/vod/<recordingId>/360p/index.m3u8
+backend/media/vod/<recordingId>/480p/index.m3u8
+backend/media/vod/<recordingId>/720p/index.m3u8
+```
+
+The backend marks the recording as `packaging` while this worker is running. It marks the recording as `packaged` only after the expected VOD manifest files exist.
+
 ## SSAI And CSAI
 
 SSAI means server-side ad insertion. The server prepares the stream so ads and content look like one continuous playback item to the player.

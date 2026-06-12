@@ -22,6 +22,7 @@ function assertRequiredConfig(config) {
   if (!config.recordings.archiveRoot) missing.push("RECORDING_ARCHIVE_ROOT");
   if (!config.recordings.vodRoot) missing.push("VOD_MEDIA_ROOT");
   if (!config.recordings.metadataPath) missing.push("RECORDING_METADATA_FILE");
+  if (!config.recordings.prerollSourcePath) missing.push("PREROLL_SOURCE_PATH");
 
   if (missing.length > 0) {
     throw new Error(`Missing required runtime configuration: ${missing.join(", ")}`);
@@ -115,6 +116,7 @@ function getRuntimeSummary(config) {
       archiveRoot: path.resolve(config.recordings.archiveRoot),
       vodRoot: path.resolve(config.recordings.vodRoot),
       metadataPath: path.resolve(config.recordings.metadataPath),
+      prerollSourcePath: path.resolve(config.recordings.prerollSourcePath),
     },
     externalBinaries: config.externalBinaries,
   };

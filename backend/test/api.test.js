@@ -178,6 +178,17 @@ function writeReadyHlsOutput(stream, renditions = ["360p", "480p", "720p"]) {
   }
 }
 
+function writeVodOutput(recording, renditions = ["360p", "480p", "720p"]) {
+  fs.mkdirSync(recording.vodOutputPath, { recursive: true });
+  fs.writeFileSync(path.join(recording.vodOutputPath, "master.m3u8"), "#EXTM3U\n");
+
+  for (const rendition of renditions) {
+    const renditionDir = path.join(recording.vodOutputPath, rendition);
+    fs.mkdirSync(renditionDir, { recursive: true });
+    fs.writeFileSync(path.join(renditionDir, "index.m3u8"), "#EXTM3U\n");
+  }
+}
+
 test("exposes stream creation, publishing, encoder metadata, status, listing, and stop APIs", async () => {
   const config = createTestConfig();
   const lifecycleLogs = [];
@@ -631,6 +642,123 @@ test("finalizes only the stopped stream recording and fails it when the MKV is m
     assert.equal(recording.error.code, "ARCHIVE_MISSING");
     assert.equal(stream.state, "stopped");
     assert.equal(stream.encoder.recordingId, "rec-20260612-stream-alpha");
+  } finally {
+    await close(server);
+  }
+});
+
+test("packages a finalized recording into VOD HLS after the encoder exits cleanly", async () => {
+  const config = createTestConfig();
+  const encoderCalls = [];
+  const packagerCalls = [];
+  const server = createServer(config, {
+    streamApiOptions: {
+      encoderManagerOptions: {
+        spawn: createFakeSpawn(encoderCalls),
+        now: (() => {
+          let tick = 0;
+          return () => {
+            tick += 1;
+            return new Date(Date.UTC(2026, 0, 1, 0, 2, tick)).toISOString();
+          };
+        })(),
+      },
+      recordingStoreOptions: {
+        idGenerator: () => "rec-20260612-stream-alpha",
+        persist: false,
+      },
+      streamStoreOptions: {
+        idGenerator: () => "stream-alpha",
+      },
+      vodPackagerManagerOptions: {
+        spawn: createFakeSpawn(packagerCalls),
+        now: () => "2026-06-12T10:00:00.000Z",
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    fs.mkdirSync(path.dirname(config.recordings.prerollSourcePath), { recursive: true });
+    fs.writeFileSync(config.recordings.prerollSourcePath, "preroll");
+
+    await requestJson(address.port, "POST", "/api/streams", {
+      title: "Package me",
+    });
+    await requestJson(address.port, "POST", "/api/streams/stream-alpha/publish/start", {});
+
+    const encoding = await requestJson(
+      address.port,
+      "POST",
+      "/api/streams/stream-alpha/encoder/start",
+      {},
+    );
+
+    await requestJson(address.port, "POST", "/api/streams/stream-alpha/stop", {});
+    fs.mkdirSync(path.dirname(encoding.body.recording.archivePath), { recursive: true });
+    fs.writeFileSync(encoding.body.recording.archivePath, "archive");
+
+    encoderCalls[0].child.emit("close", 0, "SIGTERM");
+
+    let recording = server.streamApi.recordingStore.getRecording("rec-20260612-stream-alpha");
+
+    assert.equal(recording.state, RECORDING_STATES.PACKAGING);
+    assert.equal(packagerCalls.length, 1);
+    assert.equal(packagerCalls[0].args.includes(config.recordings.prerollSourcePath), true);
+    assert.equal(packagerCalls[0].args.includes(encoding.body.recording.archivePath), true);
+
+    writeVodOutput(recording);
+    packagerCalls[0].child.emit("close", 0, null);
+
+    recording = server.streamApi.recordingStore.getRecording("rec-20260612-stream-alpha");
+
+    assert.equal(recording.state, RECORDING_STATES.PACKAGED);
+    assert.equal(recording.error, null);
+    assert.equal(fs.existsSync(path.join(recording.vodOutputPath, "master.m3u8")), true);
+  } finally {
+    await close(server);
+  }
+});
+
+test("allows retrying VOD packaging for an archived recording through the API", async () => {
+  const config = createTestConfig();
+  const packagerCalls = [];
+  const server = createServer(config, {
+    streamApiOptions: {
+      recordingStoreOptions: {
+        persist: false,
+      },
+      vodPackagerManagerOptions: {
+        spawn: createFakeSpawn(packagerCalls),
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    const recording = server.streamApi.recordingStore.createRecording({
+      recordingId: "rec-retry",
+      sourceStreamId: "stream-retry",
+      title: "Retry me",
+    });
+
+    server.streamApi.recordingStore.setRecordingState("rec-retry", RECORDING_STATES.FAILED, {
+      error: {
+        code: "VOD_PACKAGING_FAILED",
+        message: "First attempt failed.",
+      },
+    });
+    fs.mkdirSync(path.dirname(recording.archivePath), { recursive: true });
+    fs.writeFileSync(recording.archivePath, "archive");
+    fs.mkdirSync(path.dirname(config.recordings.prerollSourcePath), { recursive: true });
+    fs.writeFileSync(config.recordings.prerollSourcePath, "preroll");
+
+    const retry = await requestJson(address.port, "POST", "/api/recordings/rec-retry/package", {});
+
+    assert.equal(retry.statusCode, 202);
+    assert.equal(retry.body.success, true);
+    assert.equal(retry.body.recording.state, RECORDING_STATES.PACKAGING);
+    assert.equal(packagerCalls.length, 1);
   } finally {
     await close(server);
   }

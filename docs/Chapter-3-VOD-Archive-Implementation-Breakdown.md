@@ -80,6 +80,16 @@ Done when:
 - The recording becomes `packaged` only after a playable VOD manifest exists.
 - Missing or invalid pre-roll input fails clearly, unless a no-ad fallback is explicitly configured.
 
+Implementation notes:
+
+- Part 3 adds `backend/src/vodPackager.js` as a separate FFmpeg worker manager for completed recordings.
+- VOD packaging reads the shared pre-roll clip from `backend/media/ads/preroll/source.mp4` by default, then reads `backend/media/archive/<recordingId>/source.mkv`.
+- Generated VOD HLS is written under `backend/media/vod/<recordingId>/` with a `master.m3u8` and the Chapter 1 rendition ladder.
+- Normal stream stop triggers VOD packaging only after the encoder process exits and the archive MKV passes the non-empty file check.
+- Packaging state moves from `finalizing` to `packaging`, then to `packaged` only after expected VOD manifests exist.
+- Missing or empty pre-roll input fails the recording with a clear error and keeps the MKV archive available for retry.
+- `POST /api/recordings/:recordingId/package` is available as the first retry hook; the broader recording API surface is still tracked in Part 4.
+
 ## Part 4: Recording API and nginx delivery
 
 Goal: Expose recordings through backend metadata APIs while nginx serves the actual VOD media files.
