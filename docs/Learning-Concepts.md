@@ -430,6 +430,26 @@ backend/media/archive/<recordingId>/source.mkv
 
 That MKV file is the durable recording. If the VOD HLS files are deleted or need different settings later, the backend can package the MKV again.
 
+## Live Archive Output
+
+In Chapter 3, starting the live encoder also creates a recording metadata record.
+
+That record gets a `recordingId`, and the encoder uses that ID to write:
+
+```text
+backend/media/archive/<recordingId>/source.mkv
+```
+
+The same FFmpeg worker still writes live HLS files for current viewers:
+
+```text
+backend/media/live/<streamId>/master.m3u8
+```
+
+This means live playback and archive storage happen beside each other. The live files stay organized by `streamId`, while the saved recording is organized by `recordingId`.
+
+When a stream stops, the recording moves to `finalizing`. That means FFmpeg has been asked to stop and the backend is waiting for the archive file to be complete. After FFmpeg exits, the backend checks the MKV. If `source.mkv` is missing or empty, only that recording becomes `failed`; other streams and recordings are left alone.
+
 ## MKV
 
 MKV is a media container format. A container is like a box that holds video, audio, and timing information.

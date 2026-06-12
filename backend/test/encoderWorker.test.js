@@ -19,6 +19,7 @@ const {
   cleanupStreamOutputDirectory,
   createEncoderWorkerManager,
 } = require("../src/encoderWorker");
+const { buildRecordingArchivePath } = require("../src/recordingPaths");
 const { createStreamStore } = require("../src/streams");
 
 function createTestConfig() {
@@ -62,18 +63,27 @@ function createFakeSpawn(calls) {
   };
 }
 
-test("builds an FFmpeg command for RTSP input and per-stream HLS output", () => {
+test("builds an FFmpeg command for RTSP input, per-stream HLS output, and MKV archive", () => {
   const config = createTestConfig();
   const stream = createPublishedStream(config);
-  const command = buildFfmpegCommand(config, stream);
+  const recording = {
+    recordingId: "rec-20260612-stream-alpha",
+    archivePath: buildRecordingArchivePath(config, "rec-20260612-stream-alpha"),
+  };
+  const command = buildFfmpegCommand(config, stream, { recording });
 
   assert.equal(buildEncoderInputUrl(config, "stream-alpha"), "rtsp://127.0.0.1:8554/live/stream-alpha");
   assert.equal(command.command, "ffmpeg-test");
   assert.equal(command.inputUrl, "rtsp://127.0.0.1:8554/live/stream-alpha");
+  assert.equal(command.recordingId, "rec-20260612-stream-alpha");
+  assert.equal(command.archivePath, recording.archivePath);
   assert.deepEqual(command.renditions, ["360p", "480p", "720p"]);
   assert.equal(command.args.includes("-rtsp_transport"), true);
   assert.equal(command.args.includes("libx264"), true);
   assert.equal(command.args.includes("aac"), true);
+  assert.equal(command.args.includes("-f"), true);
+  assert.equal(command.args.includes("matroska"), true);
+  assert.equal(command.args.includes(recording.archivePath), true);
   assert.equal(command.args.includes(String(HLS_SEGMENT_SECONDS)), true);
   assert.equal(command.args.includes(String(HLS_PLAYLIST_SIZE)), true);
   assert.match(command.args.join(" "), new RegExp(`fps=${OUTPUT_FRAME_RATE}`));
@@ -96,15 +106,25 @@ test("starts isolated encoder workers and prepares only each stream output direc
   store.createStream({ streamId: "stream-beta" });
 
   const first = manager.startEncoder(store.markPublishing("stream-alpha"));
-  const second = manager.startEncoder(store.markPublishing("stream-beta"));
+  const betaRecording = {
+    recordingId: "rec-20260612-stream-beta",
+    archivePath: buildRecordingArchivePath(config, "rec-20260612-stream-beta"),
+  };
+  const second = manager.startEncoder(store.markPublishing("stream-beta"), {
+    recording: betaRecording,
+  });
 
   assert.equal(first.pid, 1000);
   assert.equal(second.pid, 1001);
+  assert.equal(second.recordingId, betaRecording.recordingId);
+  assert.equal(second.archivePath, betaRecording.archivePath);
   assert.equal(calls.length, 2);
   assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-alpha", "master.m3u8")), true);
   assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-beta", "master.m3u8")), true);
+  assert.equal(fs.existsSync(path.dirname(betaRecording.archivePath)), true);
   assert.equal(calls[0].args.includes(path.join(config.hls.mediaRoot, "stream-beta", "360p", "index.m3u8")), false);
   assert.equal(calls[1].args.includes(path.join(config.hls.mediaRoot, "stream-alpha", "360p", "index.m3u8")), false);
+  assert.equal(calls[1].args.includes(betaRecording.archivePath), true);
 
   calls[0].child.stderr.emit("data", Buffer.from("alpha stderr"));
 

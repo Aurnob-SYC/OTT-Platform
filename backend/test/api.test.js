@@ -10,6 +10,7 @@ const test = require("node:test");
 
 const { createRuntimeConfig } = require("../src/config");
 const { createServer } = require("../src/index");
+const { RECORDING_STATES } = require("../src/recordings");
 const { createStreamStore } = require("../src/streams");
 
 function listen(server) {
@@ -112,12 +113,14 @@ function createFakeEncoderManager() {
     },
     startEncoder(stream, options) {
       const status = {
+        archivePath: options.recording ? options.recording.archivePath : null,
         commandLine: `ffmpeg -i rtsp://127.0.0.1:8554/live/${stream.streamId}`,
         exitCode: null,
         exitSignal: null,
         inputUrl: `rtsp://127.0.0.1:8554/live/${stream.streamId}`,
         outputDir: stream.output.hlsOutputDir,
         pid: 4321,
+        recordingId: options.recording ? options.recording.recordingId : null,
         renditions: options.renditions,
         running: true,
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -128,10 +131,13 @@ function createFakeEncoderManager() {
       return status;
     },
     stopEncoder(streamId) {
+      const status = started.get(streamId);
       started.delete(streamId);
       return {
+        archivePath: status ? status.archivePath : null,
         exitCode: 0,
         exitSignal: "SIGTERM",
+        recordingId: status ? status.recordingId : null,
         state: "stopped",
         stderrTail: "",
         stoppedAt: "2026-01-01T00:00:01.000Z",
@@ -179,6 +185,10 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     streamApiOptions: {
       encoderManager: createFakeEncoderManager(),
       logger: (entry) => lifecycleLogs.push(entry),
+      recordingStoreOptions: {
+        idGenerator: () => "rec-20260612-stream-alpha",
+        persist: false,
+      },
       streamStoreOptions: {
         idGenerator: () => "stream-alpha",
       },
@@ -240,8 +250,14 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
     assert.equal(encoding.statusCode, 200);
     assert.equal(encoding.body.success, true);
     assert.equal(encoding.body.pid, 4321);
+    assert.equal(encoding.body.recording.recordingId, "rec-20260612-stream-alpha");
+    assert.equal(encoding.body.recording.sourceStreamId, "stream-alpha");
+    assert.equal(encoding.body.recording.state, RECORDING_STATES.RECORDING);
+    assert.match(encoding.body.recording.archivePath, /media[\\/]archive[\\/]rec-20260612-stream-alpha[\\/]source\.mkv$/);
     assert.deepEqual(encoding.body.renditions, ["360p", "480p"]);
     assert.equal(encoding.body.stream.state, "encoding");
+    assert.equal(encoding.body.stream.encoder.recordingId, "rec-20260612-stream-alpha");
+    assert.equal(encoding.body.stream.encoder.archivePath, encoding.body.recording.archivePath);
     assert.equal(encoding.body.stream.encoder.inputUrl, "rtsp://127.0.0.1:8554/live/stream-alpha");
     assert.equal(encoding.body.stream.encoder.commandLine.includes("ffmpeg"), true);
     assert.equal(encoding.body.stream.encoder.running, true);
@@ -322,6 +338,8 @@ test("exposes stream creation, publishing, encoder metadata, status, listing, an
 
     assert.equal(stopped.statusCode, 200);
     assert.equal(stopped.body.success, true);
+    assert.equal(stopped.body.recording.recordingId, "rec-20260612-stream-alpha");
+    assert.equal(stopped.body.recording.state, RECORDING_STATES.FINALIZING);
     assert.equal(stopped.body.stream.state, "stopped");
     assert.equal(stopped.body.stream.encoder.exitSignal, "SIGTERM");
     assert.equal(stopped.body.stream.encoder.running, false);
@@ -542,6 +560,77 @@ test("marks only the crashed encoder stream failed and cleans only its HLS outpu
     assert.equal(restartedAlpha.body.pid, 7002);
     assert.equal(calls.length, 3);
     assert.equal(fs.existsSync(path.join(config.hls.mediaRoot, "stream-alpha", "master.m3u8")), true);
+  } finally {
+    await close(server);
+  }
+});
+
+test("finalizes only the stopped stream recording and fails it when the MKV is missing", async () => {
+  const config = createTestConfig();
+  const calls = [];
+  const server = createServer(config, {
+    streamApiOptions: {
+      encoderManagerOptions: {
+        spawn: createFakeSpawn(calls),
+        now: (() => {
+          let tick = 0;
+          return () => {
+            tick += 1;
+            return new Date(Date.UTC(2026, 0, 1, 0, 1, tick)).toISOString();
+          };
+        })(),
+      },
+      recordingStoreOptions: {
+        idGenerator: () => "rec-20260612-stream-alpha",
+        persist: false,
+      },
+      streamStoreOptions: {
+        idGenerator: () => "stream-alpha",
+      },
+    },
+  });
+  const address = await listen(server);
+
+  try {
+    await requestJson(address.port, "POST", "/api/streams", {
+      title: "Archive me",
+    });
+    await requestJson(address.port, "POST", "/api/streams/stream-alpha/publish/start", {});
+
+    const encoding = await requestJson(
+      address.port,
+      "POST",
+      "/api/streams/stream-alpha/encoder/start",
+      {},
+    );
+
+    assert.equal(encoding.statusCode, 200);
+    assert.equal(encoding.body.recording.state, RECORDING_STATES.RECORDING);
+    assert.equal(calls[0].args.includes(encoding.body.recording.archivePath), true);
+
+    const stopped = await requestJson(
+      address.port,
+      "POST",
+      "/api/streams/stream-alpha/stop",
+      {},
+    );
+
+    assert.equal(stopped.statusCode, 200);
+    assert.equal(stopped.body.recording.state, RECORDING_STATES.FINALIZING);
+    assert.equal(
+      server.streamApi.recordingStore.getRecording("rec-20260612-stream-alpha").state,
+      RECORDING_STATES.FINALIZING,
+    );
+
+    calls[0].child.emit("close", 0, "SIGTERM");
+
+    const recording = server.streamApi.recordingStore.getRecording("rec-20260612-stream-alpha");
+    const stream = server.streamApi.streamStore.getStream("stream-alpha");
+
+    assert.equal(recording.state, RECORDING_STATES.FAILED);
+    assert.equal(recording.error.code, "ARCHIVE_MISSING");
+    assert.equal(stream.state, "stopped");
+    assert.equal(stream.encoder.recordingId, "rec-20260612-stream-alpha");
   } finally {
     await close(server);
   }

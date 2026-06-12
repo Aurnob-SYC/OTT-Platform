@@ -1,6 +1,7 @@
 "use strict";
 
 const express = require("express");
+const fs = require("node:fs");
 
 const {
   RENDITION_DEFINITIONS,
@@ -13,7 +14,7 @@ const {
   createJsonLogger,
   logStreamLifecycle,
 } = require("./observability");
-const { createRecordingStore } = require("./recordings");
+const { RECORDING_STATES, createRecordingStore } = require("./recordings");
 const { STREAM_STATES, createStreamStore } = require("./streams");
 const { assertStreamId, buildWhepPlaybackUrl } = require("./urlBuilders");
 const {
@@ -275,6 +276,53 @@ function buildEncoderExitMessage(event) {
 }
 
 /**
+ * Checks whether an archive MKV exists and contains bytes.
+ * @param {string | null | undefined} archivePath - Candidate source MKV path.
+ * @returns {{ok: boolean, sizeBytes: number, error: object | null}} Archive validation result.
+ */
+function inspectArchiveFile(archivePath) {
+  if (!archivePath) {
+    return {
+      ok: false,
+      sizeBytes: 0,
+      error: {
+        code: "ARCHIVE_PATH_MISSING",
+        message: "Recording archive path was not attached to the encoder worker.",
+      },
+    };
+  }
+
+  try {
+    const stats = fs.statSync(archivePath);
+    if (stats.size > 0) {
+      return {
+        ok: true,
+        sizeBytes: stats.size,
+        error: null,
+      };
+    }
+
+    return {
+      ok: false,
+      sizeBytes: 0,
+      error: {
+        code: "ARCHIVE_EMPTY",
+        message: "Recording archive file exists but is empty.",
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      sizeBytes: 0,
+      error: {
+        code: "ARCHIVE_MISSING",
+        message: `Recording archive file is missing: ${error.message}`,
+      },
+    };
+  }
+}
+
+/**
  * Creates the Express router and supporting managers for stream, encoder, and viewer APIs.
  * @param {object} config - Runtime configuration for the platform.
  * @param {object} [options={}] - Optional dependency injection and store overrides.
@@ -306,10 +354,13 @@ function createStreamApi(config, options = {}) {
           const current = streamStore.getStream(event.streamId);
 
           if (event.expectedStop || current.state === STREAM_STATES.STOPPED) {
+            const recording = finalizeRecording(event.recordingId, event.archivePath);
             const stopped = streamStore.markStopped(event.streamId, {
               encoder: {
+                archivePath: event.archivePath,
                 exitCode: event.exitCode,
                 exitSignal: event.exitSignal,
+                recordingId: event.recordingId,
                 running: false,
                 stderrTail: event.stderrTail,
                 stoppedAt: event.stoppedAt,
@@ -317,8 +368,18 @@ function createStreamApi(config, options = {}) {
             });
             logStreamLifecycle(logger, "encoder_stopped", stopped, {
               expectedStop: event.expectedStop,
+              recording,
             });
             return;
+          }
+
+          if (event.recordingId) {
+            recordingStore.setRecordingState(event.recordingId, RECORDING_STATES.FAILED, {
+              error: {
+                code: "ENCODER_EXITED",
+                message: buildEncoderExitMessage(event),
+              },
+            });
           }
 
           let cleanup = null;
@@ -338,8 +399,10 @@ function createStreamApi(config, options = {}) {
 
           const failed = streamStore.markFailed(event.streamId, {
             encoder: {
+              archivePath: event.archivePath,
               exitCode: event.exitCode,
               exitSignal: event.exitSignal,
+              recordingId: event.recordingId,
               running: false,
               stderrTail: event.stderrTail,
               stoppedAt: event.stoppedAt,
@@ -362,6 +425,34 @@ function createStreamApi(config, options = {}) {
     });
   const mediaMtxPathWaiter = options.mediaMtxPathWaiter || waitForMediaMtxPathMediaFlow;
   const router = express.Router();
+
+  /**
+   * Marks one recording finalizing or failed after the encoder has exited.
+   * @param {string | null | undefined} recordingId - Recording identifier attached to the worker.
+   * @param {string | null | undefined} archivePath - Source MKV path attached to the worker.
+   * @returns {object | null} Updated recording metadata when a recording was available.
+   */
+  function finalizeRecording(recordingId, archivePath) {
+    if (!recordingId) {
+      return null;
+    }
+
+    const archive = inspectArchiveFile(archivePath);
+
+    try {
+      if (!archive.ok) {
+        return recordingStore.setRecordingState(recordingId, RECORDING_STATES.FAILED, {
+          error: archive.error,
+        });
+      }
+
+      return recordingStore.setRecordingState(recordingId, RECORDING_STATES.FINALIZING, {
+        error: null,
+      });
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * Re-checks HLS readiness and promotes an encoding stream to live when playlists appear.
@@ -494,17 +585,44 @@ function createStreamApi(config, options = {}) {
       }
 
       const renditions = readRenditions(request.body);
-      const startStatus = encoderManager.startEncoder(current, { renditions });
+      const existingEncoder = encoderManager.getEncoderStatus(request.params.streamId);
+      let recording =
+        existingEncoder && existingEncoder.recordingId
+          ? recordingStore.getRecording(existingEncoder.recordingId)
+          : recordingStore.createRecording({
+              sourceStreamId: current.streamId,
+              title: current.title,
+            });
+      let startStatus;
+
+      try {
+        startStatus = encoderManager.startEncoder(current, { renditions, recording });
+      } catch (error) {
+        recordingStore.setRecordingState(recording.recordingId, RECORDING_STATES.FAILED, {
+          error: {
+            code: "ENCODER_START_FAILED",
+            message: error.message,
+          },
+        });
+        throw error;
+      }
+
+      if (startStatus.recordingId && startStatus.recordingId !== recording.recordingId) {
+        recording = recordingStore.getRecording(startStatus.recordingId);
+      }
+
       const markEncoderStarted =
         current.state === STREAM_STATES.LIVE ? streamStore.markLive : streamStore.markEncoding;
       const stream = markEncoderStarted(request.params.streamId, {
         encoder: {
+          archivePath: startStatus.archivePath || recording.archivePath,
           commandLine: startStatus.commandLine,
           exitCode: startStatus.exitCode,
           exitSignal: startStatus.exitSignal,
           inputUrl: startStatus.inputUrl,
           outputDir: startStatus.outputDir,
           pid: startStatus.pid,
+          recordingId: startStatus.recordingId || recording.recordingId,
           renditions: startStatus.renditions || renditions,
           running: startStatus.running === true,
           startedAt: startStatus.startedAt,
@@ -519,6 +637,7 @@ function createStreamApi(config, options = {}) {
       response.status(200).json({
         success: true,
         pid: refreshedStream.encoder.pid,
+        recording,
         renditions: refreshedStream.encoder.renditions || renditions,
         stream: refreshedStream,
       });
@@ -531,12 +650,24 @@ function createStreamApi(config, options = {}) {
     try {
       assertKnownStreamId(request.params.streamId);
 
-      requireStreamStatus(streamStore, request.params.streamId);
+      const current = requireStreamStatus(streamStore, request.params.streamId);
       const stopStatus = encoderManager.stopEncoder(request.params.streamId);
+      let recording = null;
+
+      if (current.encoder.recordingId) {
+        recording = recordingStore.setRecordingState(
+          current.encoder.recordingId,
+          RECORDING_STATES.FINALIZING,
+          { error: null },
+        );
+      }
+
       const stream = streamStore.markStopped(request.params.streamId, {
         encoder: {
+          archivePath: stopStatus.archivePath || current.encoder.archivePath,
           exitCode: stopStatus.exitCode,
           exitSignal: stopStatus.exitSignal,
+          recordingId: stopStatus.recordingId || current.encoder.recordingId,
           running: false,
           stderrTail: stopStatus.stderrTail,
           stoppedAt: stopStatus.stoppedAt,
@@ -545,11 +676,13 @@ function createStreamApi(config, options = {}) {
       const clearedViewerSessions = viewerSessionStore.clearStreamSessions(request.params.streamId);
       logStreamLifecycle(logger, "stream_stopped", stream, {
         clearedViewerSessions,
+        recording,
       });
 
       response.status(200).json({
         success: true,
         clearedViewerSessions,
+        recording,
         stream,
       });
     } catch (error) {

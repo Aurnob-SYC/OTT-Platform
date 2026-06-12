@@ -53,6 +53,13 @@ Done when:
 - The same stream creates a non-empty `source.mkv` under `backend/media/archive/<recordingId>/`.
 - One stream's archive failure does not affect other streams.
 
+Implementation notes:
+
+- Encoder start now creates a recording metadata record and attaches its `recordingId` and `archivePath` to the encoder status.
+- The FFmpeg worker still writes live HLS under `backend/media/live/<streamId>/`, and also writes a Matroska archive to `backend/media/archive/<recordingId>/source.mkv`.
+- Stream stop immediately moves the recording to `finalizing`; after the FFmpeg worker exits, the backend checks that the MKV exists and is non-empty.
+- Missing or empty archive files mark only that recording as `failed`. The stream stop remains isolated to the stopped stream, and unrelated streams keep running.
+
 ## Part 3: VOD packaging and pre-roll
 
 Goal: Convert completed MKV archives into stable VOD HLS output, including the Chapter 3 pre-roll checkpoint.

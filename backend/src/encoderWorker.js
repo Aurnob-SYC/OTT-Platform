@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { buildMediaMtxPath, buildStreamHlsOutputDir } = require("./urlBuilders");
+const { buildRecordingArchiveDir } = require("./recordingPaths");
 
 const MAX_STDERR_TAIL_LENGTH = 8 * 1024;
 const OUTPUT_FRAME_RATE = 30;
@@ -237,13 +238,14 @@ function buildScaleFilter(renditions) {
 }
 
 /**
- * Builds the FFmpeg command-line arguments for generating HLS output.
+ * Builds the FFmpeg command-line arguments for generating HLS output and an optional MKV archive.
  * @param {string} inputUrl - MediaMTX input URL for the encoder to read.
  * @param {string} outputDir - Base directory where HLS output should be written.
  * @param {Array<object>} renditions - Rendition definitions to encode.
+ * @param {string | null} archivePath - Optional MKV archive path for the same live input.
  * @returns {string[]} The full FFmpeg argument list.
  */
-function buildFfmpegArgs(inputUrl, outputDir, renditions) {
+function buildFfmpegArgs(inputUrl, outputDir, renditions, archivePath = null) {
   const args = ["-hide_banner", "-loglevel", "info", "-fflags", "+genpts"];
 
   if (inputUrl.startsWith("rtsp://") || inputUrl.startsWith("rtsps://")) {
@@ -304,6 +306,48 @@ function buildFfmpegArgs(inputUrl, outputDir, renditions) {
     );
   }
 
+  if (archivePath) {
+    const archiveRendition = renditions[renditions.length - 1];
+
+    args.push(
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0?",
+      "-vf",
+      `fps=${OUTPUT_FRAME_RATE},format=yuv420p`,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-profile:v",
+      "main",
+      "-pix_fmt",
+      "yuv420p",
+      "-b:v",
+      archiveRendition.videoBitrate,
+      "-maxrate",
+      archiveRendition.maxrate,
+      "-bufsize",
+      archiveRendition.bufsize,
+      "-g",
+      "60",
+      "-keyint_min",
+      "60",
+      "-sc_threshold",
+      "0",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      "-ac",
+      "2",
+      "-f",
+      "matroska",
+      archivePath,
+    );
+  }
+
   return args;
 }
 
@@ -325,22 +369,26 @@ function quoteCommandPart(value) {
  * @param {object} config - Runtime configuration containing binary paths and relay URLs.
  * @param {object} stream - Stream record that provides the streamId and output directory.
  * @param {object} [options={}] - Optional encoder settings such as the renditions list.
- * @returns {{command: string, args: string[], commandLine: string, inputUrl: string, outputDir: string, renditions: string[]}} The command description used to start FFmpeg.
+ * @returns {{archivePath: string | null, command: string, args: string[], commandLine: string, inputUrl: string, outputDir: string, renditions: string[], recordingId: string | null}} The command description used to start FFmpeg.
  */
 function buildFfmpegCommand(config, stream, options = {}) {
   const renditionNames = options.renditions || Object.keys(RENDITION_DEFINITIONS);
   const renditions = getRenditionDefinitions(renditionNames);
   const inputUrl = buildEncoderInputUrl(config, stream.streamId);
   const outputDir = stream.output.hlsOutputDir;
+  const recording = options.recording || null;
+  const archivePath = recording ? recording.archivePath : null;
   const command = config.externalBinaries.ffmpeg;
-  const args = buildFfmpegArgs(inputUrl, outputDir, renditions);
+  const args = buildFfmpegArgs(inputUrl, outputDir, renditions, archivePath);
 
   return {
+    archivePath,
     command,
     args,
     commandLine: [command, ...args].map(quoteCommandPart).join(" "),
     inputUrl,
     outputDir,
+    recordingId: recording ? recording.recordingId : null,
     renditions: renditions.map((rendition) => rendition.name),
   };
 }
@@ -401,6 +449,8 @@ function createEncoderWorkerManager(config, options = {}) {
       stderrTail: worker.stderrTail,
       inputUrl: worker.inputUrl,
       outputDir: worker.outputDir,
+      archivePath: worker.archivePath,
+      recordingId: worker.recordingId,
       renditions: [...worker.renditions],
       commandLine: worker.commandLine,
       expectedStop: worker.expectedStop,
@@ -442,6 +492,9 @@ function createEncoderWorkerManager(config, options = {}) {
     const renditions = getRenditionDefinitions(command.renditions);
 
     ensureStreamOutputDirectories(command.outputDir, renditions);
+    if (command.recordingId) {
+      fs.mkdirSync(buildRecordingArchiveDir(config, command.recordingId), { recursive: true });
+    }
     writeMasterPlaylist(command.outputDir, renditions);
 
     const child = spawn(command.command, command.args, {
@@ -451,6 +504,7 @@ function createEncoderWorkerManager(config, options = {}) {
     });
 
     const worker = {
+      archivePath: command.archivePath,
       child,
       commandLine: command.commandLine,
       exitCode: null,
@@ -460,6 +514,7 @@ function createEncoderWorkerManager(config, options = {}) {
       inputUrl: command.inputUrl,
       outputDir: command.outputDir,
       pid: child.pid || null,
+      recordingId: command.recordingId,
       renditions: command.renditions,
       startedAt: getNow(),
       stoppedAt: null,
