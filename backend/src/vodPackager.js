@@ -1,5 +1,6 @@
 "use strict";
 
+const { execFileSync } = require("node:child_process");
 const { spawn: defaultSpawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -13,6 +14,86 @@ const {
   writeMasterPlaylist,
 } = require("./encoderWorker");
 const { buildRecordingVodOutputDir } = require("./recordingPaths");
+
+const PROBE_TIMEOUT_MS = 10000;
+
+/**
+ * Converts ffprobe numeric output into a positive duration.
+ * @param {string} output - Raw ffprobe output.
+ * @returns {number | null} Parsed duration, or null when unavailable.
+ */
+function parsePositiveDuration(output) {
+  const durationSeconds = Number.parseFloat(output.trim());
+  return Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null;
+}
+
+/**
+ * Estimates duration from packet timestamps when the container has no duration metadata.
+ * @param {object} config - Runtime configuration.
+ * @param {string} archivePath - Archive file path to inspect.
+ * @returns {number} Estimated duration in seconds.
+ */
+function probeArchivePacketDurationSeconds(config, archivePath) {
+  let output;
+
+  try {
+    output = execFileSync(
+      config.externalBinaries.ffprobe,
+      [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "packet=pts_time,duration_time",
+        "-of",
+        "csv=p=0",
+        archivePath,
+      ],
+      {
+        encoding: "utf8",
+        timeout: PROBE_TIMEOUT_MS,
+        windowsHide: true,
+      },
+    );
+  } catch (error) {
+    const wrapped = new Error(`Could not estimate recording archive duration: ${error.message}`);
+    wrapped.code = "ARCHIVE_DURATION_PROBE_FAILED";
+    throw wrapped;
+  }
+
+  let firstTimestamp = null;
+  let lastTimestamp = null;
+
+  for (const line of output.split(/\r?\n/u)) {
+    if (line.trim() === "") {
+      continue;
+    }
+
+    const [ptsRaw, durationRaw] = line.split(",");
+    const pts = Number.parseFloat(ptsRaw);
+    const packetDuration = Number.parseFloat(durationRaw);
+
+    if (!Number.isFinite(pts)) {
+      continue;
+    }
+
+    const endTimestamp = pts + (Number.isFinite(packetDuration) && packetDuration > 0 ? packetDuration : 0);
+    firstTimestamp = firstTimestamp === null ? pts : Math.min(firstTimestamp, pts);
+    lastTimestamp = lastTimestamp === null ? endTimestamp : Math.max(lastTimestamp, endTimestamp);
+  }
+
+  const durationSeconds =
+    firstTimestamp === null || lastTimestamp === null ? null : lastTimestamp - firstTimestamp;
+
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    const error = new Error("Could not estimate a positive recording archive duration.");
+    error.code = "ARCHIVE_DURATION_INVALID";
+    throw error;
+  }
+
+  return durationSeconds;
+}
 
 /**
  * Returns the highest-resolution rendition from a set of rendition definitions.
@@ -66,20 +147,106 @@ function buildVideoInputFilter(inputIndex, outputLabel, canvas) {
 }
 
 /**
- * Builds the filter graph that joins pre-roll and main content, then creates ABR renditions.
+ * Builds a normalized video trim filter for one section of the main recording.
+ * @param {number} inputIndex - FFmpeg input index.
+ * @param {string} outputLabel - Output video label.
+ * @param {{width: number, height: number}} canvas - Shared concat canvas.
+ * @param {string} trimOptions - FFmpeg trim options, such as `end=10`.
+ * @returns {string} Filter graph fragment.
+ */
+function buildTrimmedVideoInputFilter(inputIndex, outputLabel, canvas, trimOptions) {
+  return `[${inputIndex}:v:0]trim=${trimOptions},setpts=PTS-STARTPTS,fps=${OUTPUT_FRAME_RATE},scale=w=${canvas.width}:h=${canvas.height}:force_original_aspect_ratio=decrease,pad=${canvas.width}:${canvas.height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[${outputLabel}]`;
+}
+
+/**
+ * Formats seconds for FFmpeg filter values.
+ * @param {number} value - Seconds value to format.
+ * @returns {string} A compact decimal string.
+ */
+function formatSeconds(value) {
+  return String(Math.round(value * 1000) / 1000);
+}
+
+/**
+ * Chooses an approximate midpoint for VOD ad insertion.
+ * @param {number} durationSeconds - Probed archive duration.
+ * @returns {number} Mid-roll insertion offset in seconds.
+ */
+function computeMidrollOffsetSeconds(durationSeconds) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    const error = new Error("Recording archive duration must be a positive number.");
+    error.code = "ARCHIVE_DURATION_INVALID";
+    throw error;
+  }
+
+  const marginSeconds = Math.min(HLS_SEGMENT_SECONDS, durationSeconds / 3);
+  const midpoint = durationSeconds / 2;
+  return Math.max(marginSeconds, Math.min(midpoint, durationSeconds - marginSeconds));
+}
+
+/**
+ * Probes the archive duration with ffprobe.
+ * @param {object} config - Runtime configuration.
+ * @param {string} archivePath - Archive file path to inspect.
+ * @returns {number} Duration in seconds.
+ */
+function probeArchiveDurationSeconds(config, archivePath) {
+  let output;
+
+  try {
+    output = execFileSync(
+      config.externalBinaries.ffprobe,
+      [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        archivePath,
+      ],
+      {
+        encoding: "utf8",
+        timeout: PROBE_TIMEOUT_MS,
+        windowsHide: true,
+      },
+    );
+  } catch (error) {
+    const wrapped = new Error(`Could not probe recording archive duration: ${error.message}`);
+    wrapped.code = "ARCHIVE_DURATION_PROBE_FAILED";
+    throw wrapped;
+  }
+
+  const durationSeconds = parsePositiveDuration(output);
+  if (durationSeconds) {
+    return durationSeconds;
+  }
+
+  return probeArchivePacketDurationSeconds(config, archivePath);
+}
+
+/**
+ * Builds the filter graph that joins pre-roll, main content, mid-roll, and
+ * remaining main content, then creates ABR renditions.
  * @param {Array<object>} renditions - Rendition definitions.
+ * @param {number} midrollOffsetSeconds - Approximate archive offset for the mid-roll.
  * @returns {string} FFmpeg filter_complex value.
  */
-function buildVodFilterComplex(renditions) {
+function buildVodFilterComplex(renditions, midrollOffsetSeconds) {
   const canvas = getLargestRendition(renditions);
   const videoSplits = renditions.map((rendition) => `[v${rendition.name}in]`).join("");
   const audioSplits = renditions.map((rendition) => `[a${rendition.name}]`).join("");
+  const offset = formatSeconds(midrollOffsetSeconds);
   const filters = [
-    buildVideoInputFilter(0, "vad", canvas),
-    "[0:a:0]aformat=sample_rates=48000:channel_layouts=stereo[aad]",
-    buildVideoInputFilter(1, "vmain", canvas),
-    "[1:a:0]aformat=sample_rates=48000:channel_layouts=stereo[amain]",
-    "[vad][aad][vmain][amain]concat=n=2:v=1:a=1[vcat][acat]",
+    buildVideoInputFilter(0, "vadbase", canvas),
+    "[0:a:0]aformat=sample_rates=48000:channel_layouts=stereo[aadbase]",
+    "[vadbase]split=2[vpre][vmid]",
+    "[aadbase]asplit=2[apre][amid]",
+    buildTrimmedVideoInputFilter(1, "vmainpre", canvas, `end=${offset}`),
+    `[1:a:0]atrim=end=${offset},asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo[amainpre]`,
+    buildTrimmedVideoInputFilter(1, "vmainpost", canvas, `start=${offset}`),
+    `[1:a:0]atrim=start=${offset},asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo[amainpost]`,
+    "[vpre][apre][vmainpre][amainpre][vmid][amid][vmainpost][amainpost]concat=n=4:v=1:a=1[vcat][acat]",
     `[vcat]split=${renditions.length}${videoSplits}`,
     `[acat]asplit=${renditions.length}${audioSplits}`,
   ];
@@ -138,7 +305,7 @@ function prepareVodOutputDirectory(outputDir, renditions) {
  * @param {object} config - Runtime configuration.
  * @param {object} recording - Recording metadata.
  * @param {object} [options={}] - Packaging options.
- * @returns {{args: string[], archivePath: string, command: string, commandLine: string, outputDir: string, prerollPath: string, recordingId: string, renditions: string[]}} Command description.
+ * @returns {{args: string[], archiveDurationSeconds: number, archivePath: string, command: string, commandLine: string, midrollOffsetSeconds: number, outputDir: string, prerollPath: string, recordingId: string, renditions: string[]}} Command description.
  */
 function buildVodPackagingCommand(config, recording, options = {}) {
   const renditionNames = options.renditions || Object.keys(RENDITION_DEFINITIONS);
@@ -146,6 +313,9 @@ function buildVodPackagingCommand(config, recording, options = {}) {
   const outputDir = buildRecordingVodOutputDir(config, recording.recordingId);
   const prerollPath = options.prerollPath || config.recordings.prerollSourcePath;
   const archivePath = recording.archivePath;
+  const archiveDurationSeconds = options.archiveDurationSeconds;
+  const midrollOffsetSeconds =
+    options.midrollOffsetSeconds || computeMidrollOffsetSeconds(archiveDurationSeconds);
   const command = config.externalBinaries.ffmpeg;
   const args = [
     "-hide_banner",
@@ -158,7 +328,7 @@ function buildVodPackagingCommand(config, recording, options = {}) {
     "-i",
     archivePath,
     "-filter_complex",
-    buildVodFilterComplex(renditions),
+    buildVodFilterComplex(renditions, midrollOffsetSeconds),
   ];
 
   for (const rendition of renditions) {
@@ -216,10 +386,12 @@ function buildVodPackagingCommand(config, recording, options = {}) {
   }
 
   return {
+    archiveDurationSeconds,
     archivePath,
     command,
     args,
     commandLine: [command, ...args].map(quoteCommandPart).join(" "),
+    midrollOffsetSeconds,
     outputDir,
     prerollPath,
     recordingId: recording.recordingId,
@@ -235,6 +407,7 @@ function buildVodPackagingCommand(config, recording, options = {}) {
  */
 function createVodPackagerManager(config, options = {}) {
   const spawn = options.spawn || defaultSpawn;
+  const probeDuration = options.probeArchiveDurationSeconds || probeArchiveDurationSeconds;
   const getNow = options.now || (() => new Date().toISOString());
   const onPackagingExit = options.onPackagingExit || (() => {});
   const jobs = new Map();
@@ -247,9 +420,11 @@ function createVodPackagerManager(config, options = {}) {
   function toStatus(job) {
     return {
       archivePath: job.archivePath,
+      archiveDurationSeconds: job.archiveDurationSeconds,
       commandLine: job.commandLine,
       exitCode: job.exitCode,
       exitSignal: job.exitSignal,
+      midrollOffsetSeconds: job.midrollOffsetSeconds,
       outputDir: job.outputDir,
       pid: job.pid,
       prerollPath: job.prerollPath,
@@ -277,11 +452,25 @@ function createVodPackagerManager(config, options = {}) {
       return existing;
     }
 
-    const command = buildVodPackagingCommand(config, recording, optionsForStart);
+    const prerollPath = optionsForStart.prerollPath || config.recordings.prerollSourcePath;
+    const archivePath = recording.archivePath;
+
+    assertNonEmptyFile(archivePath, "ARCHIVE_MISSING", "Recording archive file");
+    assertNonEmptyFile(prerollPath, "PREROLL_MISSING", "Pre-roll source clip");
+
+    const archiveDurationSeconds =
+      optionsForStart.archiveDurationSeconds || probeDuration(config, archivePath);
+    const midrollOffsetSeconds =
+      optionsForStart.midrollOffsetSeconds ||
+      computeMidrollOffsetSeconds(archiveDurationSeconds);
+    const command = buildVodPackagingCommand(config, recording, {
+      ...optionsForStart,
+      archiveDurationSeconds,
+      midrollOffsetSeconds,
+      prerollPath,
+    });
     const renditions = getRenditionDefinitions(command.renditions);
 
-    assertNonEmptyFile(command.archivePath, "ARCHIVE_MISSING", "Recording archive file");
-    assertNonEmptyFile(command.prerollPath, "PREROLL_MISSING", "Pre-roll source clip");
     prepareVodOutputDirectory(command.outputDir, renditions);
     writeMasterPlaylist(command.outputDir, renditions);
 
@@ -293,11 +482,13 @@ function createVodPackagerManager(config, options = {}) {
 
     const job = {
       archivePath: command.archivePath,
+      archiveDurationSeconds: command.archiveDurationSeconds,
       child,
       commandLine: command.commandLine,
       exitCode: null,
       exitSignal: null,
       exited: false,
+      midrollOffsetSeconds: command.midrollOffsetSeconds,
       outputDir: command.outputDir,
       pid: child.pid || null,
       prerollPath: command.prerollPath,
@@ -357,5 +548,7 @@ function createVodPackagerManager(config, options = {}) {
 module.exports = {
   buildVodFilterComplex,
   buildVodPackagingCommand,
+  computeMidrollOffsetSeconds,
   createVodPackagerManager,
+  probeArchiveDurationSeconds,
 };

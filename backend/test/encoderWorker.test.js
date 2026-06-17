@@ -46,6 +46,18 @@ function createFakeSpawn(calls) {
   return (command, args, options) => {
     const child = new EventEmitter();
     child.stderr = new EventEmitter();
+    child.stdin = {
+      ended: false,
+      value: "",
+      writable: true,
+      end() {
+        this.ended = true;
+        this.writable = false;
+      },
+      write(value) {
+        this.value += value;
+      },
+    };
     child.pid = 1000 + calls.length;
     child.kill = (signal) => {
       child.killedSignal = signal;
@@ -134,7 +146,8 @@ test("starts isolated encoder workers and prepares only each stream output direc
   const stopped = manager.stopEncoder("stream-alpha");
 
   assert.equal(stopped.state, "stopped");
-  assert.equal(calls[0].child.killedSignal, "SIGTERM");
+  assert.equal(calls[0].child.stdin.value, "q");
+  assert.equal(calls[0].child.stdin.ended, true);
   assert.equal(manager.getEncoderStatus("stream-beta").running, true);
 });
 

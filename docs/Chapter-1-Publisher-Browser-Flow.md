@@ -85,7 +85,7 @@ The publisher UI now treats a brief WebRTC `disconnected` state as temporary ins
 
 The encoder start call also asks the backend to wait for the MediaMTX path to be ready and to show increasing inbound media bytes before launching FFmpeg. This avoids two failure modes: FFmpeg connecting over RTSP just before MediaMTX marks the WebRTC-published path as available, and FFmpeg hanging while the path exists but browser media is not actually flowing yet.
 
-For LAN publishing on Windows, keep MediaMTX from advertising link-local `169.254.x.x` ICE candidates. The repo MediaMTX config disables automatic interface IP advertising with `webrtcIPsFromInterfaces: false` and explicitly advertises the reachable LAN host with `webrtcAdditionalHosts: [192.168.80.168]`.
+For LAN publishing on Windows, keep MediaMTX from advertising link-local `169.254.x.x` ICE candidates. The repo MediaMTX config disables automatic interface IP advertising with `webrtcIPsFromInterfaces: false`, binds the ICE listeners to `:8189`, and explicitly advertises the reachable LAN host with `webrtcAdditionalHosts: [<server-lan-ip>]`.
 
 ## Boundaries
 

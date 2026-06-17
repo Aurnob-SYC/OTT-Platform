@@ -60,30 +60,33 @@ Implementation notes:
 - Stream stop immediately moves the recording to `finalizing`; after the FFmpeg worker exits, the backend checks that the MKV exists and is non-empty.
 - Missing or empty archive files mark only that recording as `failed`. The stream stop remains isolated to the stopped stream, and unrelated streams keep running.
 
-## Part 3: VOD packaging and pre-roll
+## Part 3: VOD packaging and pre-roll/mid-roll
 
-Goal: Convert completed MKV archives into stable VOD HLS output, including the Chapter 3 pre-roll checkpoint.
+Goal: Convert completed MKV archives into stable VOD HLS output, including the Chapter 3 VOD ad checkpoint.
 
 Implementation steps:
 
 1. Add a VOD packaging worker that reads `backend/media/archive/<recordingId>/source.mkv`.
 2. Write generated VOD HLS to `backend/media/vod/<recordingId>/`.
 3. Generate a `master.m3u8` and rendition playlists that match the live ladder unless resource usage requires a smaller first version.
-4. Add support for one shared pre-roll source clip at `backend/media/ads/preroll/source.mp4`.
-5. Package the pre-roll so the player loads one recording `master.m3u8` and sees the ad before the main recording.
-6. Trigger packaging automatically after normal stream stop and allow retry later from the API.
-7. If packaging fails, keep the MKV archive and mark the recording as `failed` with a useful error.
+4. Add support for one shared ad source clip at `backend/media/ads/preroll/source.mp4`.
+5. Probe archive duration with `ffprobe`, choose an approximate midpoint, and package the ad before the recording and once near the middle.
+6. Keep one recording `master.m3u8` playback URL; the player should not manually switch between content and ads.
+7. Trigger packaging automatically after normal stream stop and allow retry later from the API.
+8. If packaging fails, keep the MKV archive and mark the recording as `failed` with a useful error.
 
 Done when:
 
 - Stopping a stream can produce VOD HLS under `backend/media/vod/<recordingId>/`.
 - The recording becomes `packaged` only after a playable VOD manifest exists.
-- Missing or invalid pre-roll input fails clearly, unless a no-ad fallback is explicitly configured.
+- Missing or invalid shared ad input, or a failed archive duration probe, fails clearly unless a no-ad fallback is explicitly configured.
 
 Implementation notes:
 
 - Part 3 adds `backend/src/vodPackager.js` as a separate FFmpeg worker manager for completed recordings.
-- VOD packaging reads the shared pre-roll clip from `backend/media/ads/preroll/source.mp4` by default, then reads `backend/media/archive/<recordingId>/source.mkv`.
+- VOD packaging reads the shared ad clip from `backend/media/ads/preroll/source.mp4` by default, then reads `backend/media/archive/<recordingId>/source.mkv`.
+- `ffprobe` estimates archive duration so FFmpeg can split the recording around the midpoint.
+- Generated playback is one continuous timeline: pre-roll ad, first part of recording, mid-roll ad, remaining recording.
 - Generated VOD HLS is written under `backend/media/vod/<recordingId>/` with a `master.m3u8` and the Chapter 1 rendition ladder.
 - Normal stream stop triggers VOD packaging only after the encoder process exits and the archive MKV passes the non-empty file check.
 - Packaging state moves from `finalizing` to `packaging`, then to `packaged` only after expected VOD manifests exist.
@@ -184,7 +187,7 @@ Done when:
 | Live regression | A stream still publishes, encodes, and plays through `/hls/<streamId>/master.m3u8`. |
 | Archive output | Stopping a stream creates `backend/media/archive/<recordingId>/source.mkv` with non-zero size. |
 | VOD packaging | Packaging creates `backend/media/vod/<recordingId>/master.m3u8` and rendition playlists. |
-| Pre-roll | Playback starts with the shared pre-roll and then continues into the main recording. |
+| VOD ads | Playback starts with the shared ad, continues into the recording, plays the shared ad again near the middle, then finishes the recording. |
 | API listing | `GET /api/recordings` returns only visible playable recordings for the home page. |
 | Retry packaging | A failed or missing VOD package can be regenerated from the MKV when the archive exists. |
 | nginx delivery | VOD playback requests go to `/vod/`, while live playback still goes to `/hls/`. |

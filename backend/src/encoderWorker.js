@@ -394,13 +394,46 @@ function buildFfmpegCommand(config, stream, options = {}) {
 }
 
 /**
- * Sends SIGTERM to a child process, trying the whole process group on non-Windows platforms first.
+ * Requests a graceful FFmpeg quit, then schedules SIGTERM as a fallback.
  * @param {import("node:child_process").ChildProcess | null | undefined} child - The spawned encoder process.
- * @returns {boolean} True when a termination signal was sent successfully.
+ * @param {number} [fallbackDelayMs=5000] - Time to wait before forcing termination.
+ * @returns {boolean} True when a shutdown request was sent successfully.
  */
-function stopChildProcess(child) {
+function stopChildProcess(child, fallbackDelayMs = 5000) {
   if (!child || !child.pid) {
     return false;
+  }
+
+  if (child.stdin && child.stdin.writable) {
+    try {
+      child.stdin.write("q");
+      child.stdin.end();
+
+      const fallback = setTimeout(() => {
+        if (child.exitCode === null && !child.killed) {
+          if (process.platform !== "win32") {
+            try {
+              process.kill(-child.pid, "SIGTERM");
+              return;
+            } catch {
+              child.kill("SIGTERM");
+              return;
+            }
+          }
+
+          child.kill("SIGTERM");
+        }
+      }, fallbackDelayMs);
+
+      if (typeof fallback.unref === "function") {
+        fallback.unref();
+      }
+
+      child.once("close", () => clearTimeout(fallback));
+      return true;
+    } catch {
+      // Fall through to signal-based shutdown if stdin is already closed.
+    }
   }
 
   if (process.platform !== "win32") {
@@ -499,7 +532,7 @@ function createEncoderWorkerManager(config, options = {}) {
 
     const child = spawn(command.command, command.args, {
       detached: process.platform !== "win32",
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["pipe", "ignore", "pipe"],
       windowsHide: true,
     });
 

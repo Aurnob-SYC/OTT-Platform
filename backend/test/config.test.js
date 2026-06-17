@@ -39,6 +39,7 @@ test("creates LAN runtime defaults and stream URLs", () => {
   );
 
   assert.equal(config.backend.port, 4000);
+  assert.equal(config.externalBinaries.ffprobe, "ffprobe");
   assert.equal(config.mediaMtx.webRtcBaseUrl, "http://192.168.1.25:8889");
   assert.equal(config.mediaMtx.rtspBaseUrl, "rtsp://127.0.0.1:8554");
   assert.equal(config.nginx.hlsBaseUrl, "http://192.168.1.25/hls");
@@ -51,6 +52,14 @@ test("creates LAN runtime defaults and stream URLs", () => {
     buildRecordingPlaybackUrl(config, "rec-20260612-stream-abc"),
     "http://192.168.1.25/vod/rec-20260612-stream-abc/master.m3u8",
   );
+});
+
+test("allows overriding the ffprobe binary used for VOD duration probing", () => {
+  const config = createRuntimeConfig({
+    FFPROBE_BINARY: "D:/tools/ffmpeg/bin/ffprobe.exe",
+  });
+
+  assert.equal(config.externalBinaries.ffprobe, "D:/tools/ffmpeg/bin/ffprobe.exe");
 });
 
 test("rejects invalid port configuration clearly", () => {

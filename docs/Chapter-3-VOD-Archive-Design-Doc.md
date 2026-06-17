@@ -52,7 +52,7 @@ Chapter 3 should integrate with the existing project in small steps:
 - Let users select one recorded video and play it.
 - Add a delete button near each recorded video.
 - Delete both the recording metadata and generated media files for that recording.
-- Include a simple pre-roll clip before the main recording for the Chapter 3 ad checkpoint.
+- Include a simple promotional clip before the main recording and once near the middle for the Chapter 3 ad checkpoint.
 
 Chapter 3 does not need a database yet. An in-memory store plus a small JSON metadata file is enough for local learning, as long as the design keeps the future database boundary clear.
 
@@ -213,14 +213,14 @@ backend/media/vod/<recordingId>/720p/index.m3u8
 
 The VOD rendition ladder should match Chapter 1 unless CPU or disk usage becomes a problem.
 
-## Pre-Roll Ad
+## VOD Ads
 
-Chapter 3 asks for a short promotional clip before the main video starts. The simplest local design is static pre-roll packaging:
+Chapter 3 asks for a short promotional clip before the main video starts. The current local design also inserts the same clip once near the middle of the recording. This is static VOD packaging, not dynamic ad serving:
 
 ```text
-Pre-roll source clip
-  -> packaged ad HLS
-  -> listed before main recording in the VOD manifest
+Shared ad source clip
+  -> packaged into the VOD timeline before the main recording
+  -> packaged into the VOD timeline again near the middle
   -> player sees one playback URL
 ```
 
@@ -236,13 +236,20 @@ Recommended generated path:
 backend/media/vod/<recordingId>/ad/
 ```
 
-For the first implementation, use one shared pre-roll clip for all recordings. The backend can package or copy the pre-roll into each recording's VOD output. The player should load only the recording `master.m3u8`; it should not manually play two separate videos.
+For the first implementation, use one shared ad clip for all recordings and for both positions. The backend probes the archive duration with `ffprobe`, chooses an approximate midpoint, and packages one continuous HLS timeline:
+
+```text
+pre-roll ad -> first part of recording -> mid-roll ad -> remaining recording
+```
+
+The player should load only the recording `master.m3u8`; it should not manually play separate videos or separate ad manifests.
 
 This is not full SSAI or CSAI. It is a learning-friendly static manifest sequence:
 
 - The ad is chosen before playback starts.
-- The main video starts after the ad finishes.
-- There is no targeting, tracking, bidding, or mid-roll insertion.
+- The main video starts after the pre-roll finishes.
+- The mid-roll position is approximate and based on the probed archive duration.
+- There is no targeting, tracking, bidding, or live ad decisioning.
 
 ## nginx Delivery
 
@@ -352,7 +359,7 @@ Rules:
 - VOD packaging failure must not delete the MKV archive.
 - Delete failure should leave the recording marked with an error so the user can retry.
 - A missing VOD directory should not crash the home page; the recording can be hidden or shown as unavailable.
-- If the pre-roll clip is missing, packaging should fail clearly or package the main recording without an ad only if that behavior is explicitly configured.
+- If the shared ad clip or archive duration probe is missing or invalid, packaging should fail clearly or package the main recording without an ad only if that behavior is explicitly configured.
 
 ## Success Criteria
 
@@ -363,7 +370,7 @@ Chapter 3 is complete when:
 - Stopping a live stream finalizes the archive.
 - The archive is packaged into VOD HLS under `backend/media/vod/<recordingId>/`.
 - The VOD playback URL is served by nginx at `/vod/<recordingId>/master.m3u8`.
-- A pre-roll clip plays before the main recording with a clean transition.
+- The shared ad clip plays before the main recording and once near the middle with clean transitions.
 - The home page lists recorded videos below the existing live experience.
 - A user can choose one recorded video and play it.
 - A delete button near each recording deletes that recording from the home page.

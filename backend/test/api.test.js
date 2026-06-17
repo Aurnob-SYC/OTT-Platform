@@ -671,6 +671,7 @@ test("packages a finalized recording into VOD HLS after the encoder exits cleanl
         idGenerator: () => "stream-alpha",
       },
       vodPackagerManagerOptions: {
+        probeArchiveDurationSeconds: () => 120,
         spawn: createFakeSpawn(packagerCalls),
         now: () => "2026-06-12T10:00:00.000Z",
       },
@@ -706,6 +707,7 @@ test("packages a finalized recording into VOD HLS after the encoder exits cleanl
     assert.equal(packagerCalls.length, 1);
     assert.equal(packagerCalls[0].args.includes(config.recordings.prerollSourcePath), true);
     assert.equal(packagerCalls[0].args.includes(encoding.body.recording.archivePath), true);
+    assert.match(packagerCalls[0].args.join(" "), /concat=n=4:v=1:a=1/);
 
     writeVodOutput(recording);
     packagerCalls[0].child.emit("close", 0, null);
@@ -729,6 +731,7 @@ test("allows retrying VOD packaging for an archived recording through the API", 
         persist: false,
       },
       vodPackagerManagerOptions: {
+        probeArchiveDurationSeconds: () => 120,
         spawn: createFakeSpawn(packagerCalls),
       },
     },

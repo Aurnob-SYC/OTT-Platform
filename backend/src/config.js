@@ -256,6 +256,7 @@ function createRuntimeConfig(env = process.env, options = {}) {
     externalBinaries: {
       mediaMtx: readString(env, "MEDIAMTX_BINARY", "mediamtx"),
       ffmpeg: readString(env, "FFMPEG_BINARY", "ffmpeg"),
+      ffprobe: readString(env, "FFPROBE_BINARY", "ffprobe"),
       nginx: readString(env, "NGINX_BINARY", "nginx"),
     },
   };

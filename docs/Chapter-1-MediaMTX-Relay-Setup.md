@@ -36,7 +36,8 @@ Notes:
 - `webrtcEncryption: true` is required for browser camera and microphone access from a non-localhost address.
 - When `webrtcEncryption` is enabled, set `MEDIAMTX_WEBRTC_BASE_URL=https://<server-lan-ip>:8889` in `backend/.env`.
 - `webrtcAdditionalHosts` should include the same LAN IP so browsers receive a reachable ICE candidate.
-- `webrtcLocalUDPAddress` and `webrtcLocalTCPAddress` expose the ICE media listener. UDP is preferred; TCP gives a fallback when UDP is blocked or unreliable.
+- `webrtcLocalUDPAddress` and `webrtcLocalTCPAddress` should usually bind to `:8189` so MediaMTX listens on all interfaces. UDP is preferred; TCP gives a fallback when UDP is blocked or unreliable.
+- Do not bind the ICE listeners to a specific LAN IP unless that IP is permanently assigned to the machine.
 - Open the publish page with `https://<server-lan-ip>:8889/live/<streamId>/publish`.
 - `apiAddress: 127.0.0.1:9997` keeps the Control API local to the server machine for Chapter 1.
 - `rtspAddress: 127.0.0.1:8554` gives FFmpeg a local read endpoint for `rtsp://127.0.0.1:8554/live/<streamId>`.
